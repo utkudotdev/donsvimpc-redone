@@ -21,6 +21,7 @@ class MPPIState:
 class MPPIParameters:
     num_rollouts: int
     num_iters: int
+    knot_scale: int = 5
 
 
 @register_dataclass
@@ -70,12 +71,26 @@ def mppi_compute_action(
     std = jnp.sqrt(mppi_dynamic_params.variance)
 
     key, subkey = jax.random.split(mppi_state.key)
-    noise = (
+
+    # --- KNOT / ZERO-ORDER HOLD LOGIC ---
+    # Calculate how many knots we need to cover the full horizon
+    num_knots = (horizon + mppi_params.knot_scale - 1) // mppi_params.knot_scale
+    
+    # Sample noise for the knots only
+    knot_noise = (
         jax.random.normal(
-            subkey, (mppi_params.num_rollouts, horizon, QUADROTOR_ACTION_DIM)
+            subkey, (mppi_params.num_rollouts, num_knots, QUADROTOR_ACTION_DIM)
         )
         * std
     )
+    
+    # Expand the knots to the full horizon using a zero-order hold (repeat)
+    noise = jnp.repeat(knot_noise, mppi_params.knot_scale, axis=1)
+    
+    # Trim back down to the exact horizon length 
+    # (needed if horizon is not perfectly divisible by knot_scale)
+    noise = noise[:, :horizon, :]
+    # ------------------------------------
 
     def rollout(actions):
         return mppi_rollout(
@@ -88,6 +103,12 @@ def mppi_compute_action(
         beta = jnp.min(costs)
         weights = jnp.exp(-(costs - beta) / mppi_dynamic_params.temp)
         weights = weights / jnp.sum(weights)
+
+        # Debugging
+        ess = 1.0 / jnp.sum(weights ** 2)
+        jax.debug.print("ESS={ess}", ess=ess)
+        ########
+
         update = jnp.sum(weights[:, None, None] * noise, axis=0)
         return nominal + update, trajs
 
@@ -96,6 +117,6 @@ def mppi_compute_action(
     )
     rollouts = jax.tree.map(lambda x: x[-1], trajs_per_iter)
 
-    action = optimized[0]
+    # action = optimized[0]
     shifted = jnp.concatenate([optimized[1:], optimized[-1:]], axis=0)
-    return action, MPPIState(actions=shifted, key=key), rollouts
+    return optimized, MPPIState(actions=shifted, key=key), rollouts
