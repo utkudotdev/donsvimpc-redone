@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 
 import jax
@@ -67,38 +67,43 @@ def mppi_compute_action(
     trajectory of every sampled rollout used in the final iteration.
     """
 
-    horizon = mppi_state.actions.shape[0]
-    std = jnp.sqrt(mppi_dynamic_params.variance)
 
-    key, subkey = jax.random.split(mppi_state.key)
+    def generate_random_actions(mppi_state):
+        horizon = mppi_state.actions.shape[0]
+        std = jnp.sqrt(mppi_dynamic_params.variance)
 
-    # --- KNOT / ZERO-ORDER HOLD LOGIC ---
-    # Calculate how many knots we need to cover the full horizon
-    num_knots = (horizon + mppi_params.knot_scale - 1) // mppi_params.knot_scale
-    
-    # Sample noise for the knots only
-    knot_noise = (
-        jax.random.normal(
-            subkey, (mppi_params.num_rollouts, num_knots, QUADROTOR_ACTION_DIM)
+        key, subkey = jax.random.split(mppi_state.key)
+        
+        # --- KNOT / ZERO-ORDER HOLD LOGIC ---
+        # Calculate how many knots we need to cover the full horizon
+        num_knots = (horizon + mppi_params.knot_scale - 1) // mppi_params.knot_scale
+        
+        # Sample noise for the knots only
+        knot_noise = (
+            jax.random.normal(
+                subkey, (mppi_params.num_rollouts, num_knots, QUADROTOR_ACTION_DIM)
+            )
+            * std
         )
-        * std
-    )
+        
+        # Expand the knots to the full horizon using a zero-order hold (repeat)
+        noise = jnp.repeat(knot_noise, mppi_params.knot_scale, axis=1)
+        
+        # Trim back down to the exact horizon length 
+        # (needed if horizon is not perfectly divisible by knot_scale)
+        noise = noise[:, :horizon, :]
+
+        return replace(mppi_state, key=key), noise
     
-    # Expand the knots to the full horizon using a zero-order hold (repeat)
-    noise = jnp.repeat(knot_noise, mppi_params.knot_scale, axis=1)
-    
-    # Trim back down to the exact horizon length 
-    # (needed if horizon is not perfectly divisible by knot_scale)
-    noise = noise[:, :horizon, :]
-    # ------------------------------------
 
     def rollout(actions):
         return mppi_rollout(
             state, actions, params, cost_fn, terminal_cost_fn, mppi_dynamic_params.dt
         )
 
-    def iter_step(nominal, _):
-        perturbed = nominal[None] + noise
+    def iter_step(mppi_state, _):
+        mppi_state, noise = generate_random_actions(mppi_state)
+        perturbed = mppi_state.actions[None] + noise
         costs, trajs = jax.vmap(rollout)(perturbed)
         beta = jnp.min(costs)
         weights = jnp.exp(-(costs - beta) / mppi_dynamic_params.temp)
@@ -110,13 +115,17 @@ def mppi_compute_action(
         ########
 
         update = jnp.sum(weights[:, None, None] * noise, axis=0)
-        return nominal + update, trajs
+        updated_nominal = mppi_state.actions + update
 
-    optimized, trajs_per_iter = jax.lax.scan(
-        iter_step, mppi_state.actions, None, length=mppi_params.num_iters
+        return replace(mppi_state, actions=updated_nominal), trajs
+
+    optimized_mppi_state, trajs_per_iter = jax.lax.scan(
+        iter_step, mppi_state, None, length=mppi_params.num_iters
     )
-    rollouts = jax.tree.map(lambda x: x[-1], trajs_per_iter)
+    rollouts = jax.tree.map(lambda x: x[-1], trajs_per_iter) # Get final rollout
+    optimized_actions = optimized_mppi_state.actions
+
 
     # action = optimized[0]
-    shifted = jnp.concatenate([optimized[1:], optimized[-1:]], axis=0)
-    return optimized, MPPIState(actions=shifted, key=key), rollouts
+    shifted = jnp.concatenate([optimized_actions[1:], optimized_actions[-1:]], axis=0)
+    return optimized_actions, replace(mppi_state, actions=shifted), rollouts
