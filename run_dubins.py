@@ -48,7 +48,7 @@ def main():
         obstacle_state=ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True)),
     )
 
-    goal = jnp.array([ 4.0, 2.0 ])
+    goal = jnp.array([ 0, 2.0 ])
     
     num_steps = 120
     dt = 0.05
@@ -64,9 +64,8 @@ def main():
         num_iters=1,
     )
     mppi_dynamic_params = MPPIDynamicParameters(
-        temp=jnp.array(1.0),
+        temp=jnp.array(0.1),
         variance=jnp.array([0.01, 0.01]),
-        dt=jnp.array(dt),
     )
 
     def cost_fn(s: State, a: jnp.ndarray) -> jnp.ndarray:
@@ -93,12 +92,13 @@ def main():
             mppi_state,
             mppi_params,
             mppi_dynamic_params,
+            dt
         )
         action = optimized_actions[0]
         print(f'First={action}, Min={jnp.min(optimized_actions)}, Max={jnp.max(optimized_actions)}')
 
         # Generate full optimal trajectory
-        _, trajs = mppi_rollout(state, optimized_actions, params, cost_fn, terminal_cost_fn, mppi_dynamic_params.dt)
+        _, trajs = mppi_rollout(state, optimized_actions, params, cost_fn, terminal_cost_fn, dt)
         opt_rollout_xs.append(np.asarray(trajs.dubins_state.x))
         opt_rollout_ys.append(np.asarray(trajs.dubins_state.y))
 

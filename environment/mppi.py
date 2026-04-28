@@ -29,8 +29,6 @@ class MPPIParameters:
 class MPPIDynamicParameters:
     temp: jnp.ndarray
     variance: jnp.ndarray
-    dt: jnp.ndarray
-
 
 def mppi_rollout(
     state: State,
@@ -59,6 +57,7 @@ def mppi_compute_action(
     mppi_state: MPPIState,
     mppi_params: MPPIParameters,
     mppi_dynamic_params: MPPIDynamicParameters,
+    dt: float
 ):
     """Compute next action of MPPI controller.
 
@@ -98,7 +97,7 @@ def mppi_compute_action(
 
     def rollout(actions):
         return mppi_rollout(
-            state, actions, params, cost_fn, terminal_cost_fn, mppi_dynamic_params.dt
+            state, actions, params, cost_fn, terminal_cost_fn, dt
         )
 
     def iter_step(mppi_state, _):
