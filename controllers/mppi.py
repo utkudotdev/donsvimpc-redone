@@ -41,10 +41,10 @@ def mppi_rollout(
 
     def body(s, a):
         s_next = step_state(s, a, params, dt)
-        return s_next, (cost_fn(s, a), s_next)
+        return s_next, (cost_fn(s, a, params), s_next)
 
     final_state, (costs, traj) = jax.lax.scan(body, state, actions)
-    return jnp.sum(costs) + terminal_cost_fn(final_state), traj
+    return jnp.sum(costs) + terminal_cost_fn(final_state, params), traj
 
 
 @partial(jax.jit, static_argnames=("cost_fn", "terminal_cost_fn", "mppi_params"))
