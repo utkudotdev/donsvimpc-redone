@@ -22,6 +22,11 @@ class Parameters:
     quadrotor_params: QuadrotorParameters
     obstacle_params: ObstacleParameters
 
+    x_min: jnp.ndarray
+    x_max: jnp.ndarray
+    y_min: jnp.ndarray
+    y_max: jnp.ndarray
+
 
 @partial(jax.jit, static_argnames=("num_substeps",))
 def step_state(
@@ -33,9 +38,11 @@ def step_state(
 ) -> State:
 
     quadrotor_state = step_quadrotor(
-        state.quadrotor_state, action, params.quadrotor_params, num_substeps
+        state.quadrotor_state, action, params.quadrotor_params, dt, num_substeps
     )
 
-    obstacle_state = step_state(state.obstacle_state, params.quadrotor_params, dt)
+    obstacle_state = step_obstacle(
+        state.obstacle_state, params.obstacle_params, dt, num_substeps
+    )
 
     return State(quadrotor_state, obstacle_state)

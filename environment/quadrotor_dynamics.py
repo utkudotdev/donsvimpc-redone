@@ -9,18 +9,19 @@ from jax.tree_util import register_dataclass
 
 GRAVITY = 9.81
 GROUND_EFFECT_DENOM_MIN = 0.1
+QUADROTOR_ACTION_DIM = 2
 
 
 @register_dataclass
 @dataclass
 class QuadrotorParameters:
-    mass: float
-    rotor_dist: float  # half the distance between rotors
-    moi: float
-    rho: float  # ground effect coefficient
-    rotor_size: float  # rotor propeller length
-    thrust_min: float
-    thrust_max: float
+    mass: jnp.ndarray
+    rotor_dist: jnp.ndarray  # half the distance between rotors
+    moi: jnp.ndarray
+    rho: jnp.ndarray  # ground effect coefficient
+    rotor_size: jnp.ndarray  # rotor propeller length
+    thrust_min: jnp.ndarray
+    thrust_max: jnp.ndarray
 
 
 @register_dataclass
