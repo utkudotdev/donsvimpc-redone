@@ -10,6 +10,7 @@ from environment.mppi import (
     MPPIParameters,
     MPPIState,
     mppi_compute_action,
+    mppi_rollout
 )
 from environment.obstacle_dynamics import ObstacleParameters, ObstacleState
 from environment.quadrotor_dynamics import (
@@ -78,6 +79,13 @@ def main():
         variance=jnp.array([0.01, 0.01]),
         dt=jnp.array(dt),
     )
+    
+    # x z theta vx vz w
+    # Q = [30.0, 30.0, 50.0, 10.0, 10.0, 10.0]
+    # QN = [30.0, 30.0, 50.0, 10.0, 10.0, 10.0]
+    # R = [100.0, 100.0]
+    # goal_state = [10.0, 1.0, 0.0, 1.0, 0.0, 0.0]
+
 
     def cost_fn(s: State, a: jnp.ndarray) -> jnp.ndarray:
         q = s.quadrotor_state
@@ -134,6 +142,8 @@ def main():
         xs.append(float(state.quadrotor_state.x))
         zs.append(float(state.quadrotor_state.z))
         thetas.append(float(state.quadrotor_state.theta))
+
+
 
     xs = np.array(xs)
     zs = np.array(zs)
@@ -195,10 +205,10 @@ def main():
         return [trail, quad, quad_body, title, *rollout_lines, opt_rollout_line]
 
     _anim = FuncAnimation(
+        # frames = num_steps + 1
         fig, update, frames=len(xs), interval=dt * 1000, blit=False, repeat=False
     )
     plt.show()
-
 
 if __name__ == "__main__":
     main()
