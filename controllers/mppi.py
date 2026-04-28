@@ -5,8 +5,7 @@ import jax
 import jax.numpy as jnp
 from jax.tree_util import register_dataclass
 
-from .environment_dynamics import Parameters, State, step_state
-from .quadrotor_dynamics import QUADROTOR_ACTION_DIM
+from environment.environment_dynamics import Parameters, State, step_state
 
 
 @register_dataclass
@@ -68,7 +67,7 @@ def mppi_compute_action(
 
 
     def generate_random_actions(mppi_state):
-        horizon = mppi_state.actions.shape[0]
+        horizon, action_dim = mppi_state.actions.shape
         std = jnp.sqrt(mppi_dynamic_params.variance)
 
         key, subkey = jax.random.split(mppi_state.key)
@@ -80,7 +79,7 @@ def mppi_compute_action(
         # Sample noise for the knots only
         knot_noise = (
             jax.random.normal(
-                subkey, (mppi_params.num_rollouts, num_knots, QUADROTOR_ACTION_DIM)
+                subkey, (mppi_params.num_rollouts, num_knots, action_dim)
             )
             * std
         )

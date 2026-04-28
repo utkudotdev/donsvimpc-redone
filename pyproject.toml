@@ -9,3 +9,14 @@ dependencies = [
     "matplotlib>=3.10.9",
     "numpy>=2.4.4",
 ]
+
+[tool.uv.sources]
+environment = { workspace = true }
+controllers = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    "environment",
+    "controllers",
+]
+
