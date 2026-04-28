@@ -7,19 +7,22 @@ from jax.tree_util import register_dataclass
 
 from .obstacle_dynamics import ObstacleParameters, ObstacleState, step_obstacle
 from .quadrotor_dynamics import QuadrotorParameters, QuadrotorState, step_quadrotor
+from .dubins_dynamics import DubinsParameters, DubinsState, step_dubins
 
 
 @register_dataclass
 @dataclass
 class State:
-    quadrotor_state: QuadrotorState
+    # quadrotor_state: QuadrotorState
+    dubins_state: DubinsState
     obstacle_state: ObstacleState
 
 
 @register_dataclass
 @dataclass
 class Parameters:
-    quadrotor_params: QuadrotorParameters
+    # quadrotor_params: QuadrotorParameters
+    dubins_params: DubinsParameters
     obstacle_params: ObstacleParameters
 
     x_min: jnp.ndarray
@@ -37,12 +40,19 @@ def step_state(
     num_substeps: int = 10,
 ) -> State:
 
-    quadrotor_state = step_quadrotor(
-        state.quadrotor_state, action, params.quadrotor_params, dt, num_substeps
+    # quadrotor_state = step_quadrotor(
+    #     state.quadrotor_state, action, params.quadrotor_params, dt, num_substeps
+    # )
+
+    dubins_state = step_dubins(
+        state.dubins_state, action, params.dubins_params, dt, num_substeps
     )
 
     obstacle_state = step_obstacle(
         state.obstacle_state, params.obstacle_params, dt, num_substeps
     )
 
-    return State(quadrotor_state, obstacle_state)
+    return State(
+        # quadrotor_state,
+        dubins_state,
+        obstacle_state)
