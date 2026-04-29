@@ -81,7 +81,7 @@ def main():
         y_max=jnp.array(y_max),
     )
 
-    goal = jnp.array([ 7.0, 3.5 ])
+    goal = jnp.array([ 7.0, 3.5, 0.0 ])
     
     num_steps = 120
     dt = 0.05
@@ -101,7 +101,7 @@ def main():
         variance=jnp.array([1.0, 1.0]),
     )
 
-    task_cost_fn, task_terminal_cost_fn = make_goal_reaching_task(goal)
+    task_cost_fn, task_terminal_cost_fn, _task_done_fn = make_goal_reaching_task(goal)
     compute_cbf_violation = cbf.cbf_violation(compute_h_vector, dt)
     cost_fn, terminal_cost_fn = cbf.embed_cbf_violation(compute_cbf_violation, task_cost_fn, task_terminal_cost_fn)
 

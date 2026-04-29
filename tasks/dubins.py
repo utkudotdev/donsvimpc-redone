@@ -5,7 +5,11 @@ import jax.numpy as jnp
 import jax
 
 
-def make_goal_reaching_task(goal: jnp.ndarray):
+def _collided_with_boundary_or_obstacles(s: State, p: Parameters):
+    return jnp.max(compute_h_vector(s, p)) >= 0
+
+
+def make_goal_reaching_task(goal: jnp.ndarray, goal_eps=0.1):
 
     def task_cost_fn(s: State, a: jnp.ndarray, p: Parameters) -> jnp.ndarray:
         d = s.dubins_state
@@ -19,7 +23,16 @@ def make_goal_reaching_task(goal: jnp.ndarray):
         return 100 * pos_err
 
 
-    return task_cost_fn, task_terminal_cost_fn
+    def task_done_fn(s: State, p: Parameters) -> tuple[bool, bool]:
+        dubins_position = jnp.array([ s.dubins_state.x, s.dubins_state.y, s.dubins_state.v ])
+        done = jnp.linalg.norm(dubins_position - goal) <= goal_eps
+
+        terminated = _collided_with_boundary_or_obstacles(s, p)
+
+        return jnp.array([ done, terminated ])
+
+
+    return task_cost_fn, task_terminal_cost_fn, task_done_fn
 
 
 def compute_h_vector(s: State, p: Parameters):

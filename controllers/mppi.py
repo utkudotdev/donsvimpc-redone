@@ -109,7 +109,7 @@ def mppi_compute_action(
 
         # Debugging
         ess = 1.0 / jnp.sum(weights ** 2)
-        jax.debug.print("ESS={ess}", ess=ess)
+        # jax.debug.print("ESS={ess}", ess=ess)
         ########
 
         update = jnp.sum(weights[:, None, None] * noise, axis=0)

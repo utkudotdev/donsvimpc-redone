@@ -3,7 +3,11 @@ from functools import partial
 
 import jax
 import jax.numpy as jnp
-from jax.tree_util import register_dataclass
+from jax.tree_util import tree_map, register_dataclass
+
+
+def from_many(*obs):
+    return tree_map(lambda *leaves: jnp.stack(leaves), *obs)
 
 
 @register_dataclass
