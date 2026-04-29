@@ -117,7 +117,7 @@ def rollout_state_with_mppi(state: State, params: Parameters, dt: float, max_rol
         action = optimized_actions[0]
         new_state = step_state(state, action, params, dt)
 
-        return (new_state, mppi_state), nstate,
+        return (new_state, mppi_state), (state, done)
 
     _, states = jax.lax.scan(_step, init=(state, mppi_state), xs=None, length=max_rollout_length)
 

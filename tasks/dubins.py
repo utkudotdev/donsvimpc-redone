@@ -23,7 +23,7 @@ def make_goal_reaching_task(goal: jnp.ndarray, goal_eps=0.1):
         return 100 * pos_err
 
 
-    def task_done_fn(s: State, p: Parameters) -> tuple[bool, bool]:
+    def task_done_fn(s: State, p: Parameters) -> jnp.ndarray:
         dubins_position = jnp.array([ s.dubins_state.x, s.dubins_state.y, s.dubins_state.v ])
         done = jnp.linalg.norm(dubins_position - goal) <= goal_eps
 
