@@ -21,16 +21,18 @@ def main():
         turn_rate_min=jnp.array(-1.0),
         turn_rate_max=jnp.array(1.0),
         velocity_min=jnp.array(-1.0),
-        velocity_max=jnp.array(1.0)
+        velocity_max=jnp.array(1.0),
+        acceleration_min=jnp.array(-2.0),
+        acceleration_max=jnp.array(2.0)
     )
     obs_params = ObstacleParameters(
-        radius=jnp.array(0.3),
-        speed=jnp.array(-0.5),
-        start_point=jnp.array([+0.5, 1.0]),
-        end_point=jnp.array([-0.5, 1.0]),
+        radius=jnp.array(1.5),
+        speed=jnp.array(0.0),
+        start_point=jnp.array([4.0, 4.0]),
+        end_point=jnp.array([0.0, 0.0]),
     )
-    x_min, x_max = -0.5, 0.5
-    y_min, y_max = 0.0, 2.0
+    x_min, x_max = 0.0, 8.0
+    y_min, y_max = 0.0, 4.0
     params = Parameters(
         dubins_params=dubins_params,
         obstacle_params=obs_params,
@@ -42,19 +44,20 @@ def main():
 
     state = State(
         dubins_state=DubinsState(
-            x=jnp.array(0.0),
-            y=jnp.array(0.5),
+            x=jnp.array(0.5),
+            y=jnp.array(3.5),
+            v=jnp.array(0.0),
             theta=jnp.array(0.0),
         ),
-        obstacle_state=ObstacleState(alpha=jnp.array(0.5), forward=jnp.array(True)),
+        obstacle_state=ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True)),
     )
 
-    goal = jnp.array([ 0, 1.50 ])
+    goal = jnp.array([ 7.0, 3.5 ])
     
     num_steps = 120
     dt = 0.05
 
-    horizon = 40
+    horizon = 20
 
     mppi_state = MPPIState(
         actions=jnp.full((horizon, 2), fill_value=0.0),
@@ -65,8 +68,8 @@ def main():
         num_iters=1,
     )
     mppi_dynamic_params = MPPIDynamicParameters(
-        temp=jnp.array(0.10),
-        variance=jnp.array([0.01, 0.01]),
+        temp=jnp.array(1.0),
+        variance=jnp.array([1.0, 1.0]),
     )
 
     def task_cost_fn(s: State, a: jnp.ndarray) -> jnp.ndarray:
@@ -78,7 +81,7 @@ def main():
     def task_terminal_cost_fn(s: State) -> jnp.ndarray:
         d = s.dubins_state
         pos_err = (d.x - goal[0]) ** 2 + (d.y - goal[1]) ** 2
-        return pos_err
+        return 100 * pos_err
 
     def compute_h_vector(s: State, p: Parameters):
         h_boundary = jnp.max(jnp.array([ 
@@ -122,10 +125,10 @@ def main():
     @jax.jit
     def eval_grid_point(x, y):
         s = State(
-            dubins_state=DubinsState(x=x, y=y, theta=jnp.array(jnp.pi / 2.0)),
+            dubins_state=DubinsState(x=x, y=y, v=jnp.array(0.1), theta=jnp.array(jnp.pi / 2.0)),
             obstacle_state=state.obstacle_state
         )
-        a = jnp.array([0.0, 0.1]) # zero turn rate, small forward velocity
+        a = jnp.array([0.0, 0.0]) # zero turn rate, small forward velocity
         h_val = jnp.max(compute_h_vector(s, params))
         cbf_viol = compute_cbf_violation(s, a, params, alpha=jnp.array(0.95))
         return h_val, cbf_viol
@@ -164,7 +167,7 @@ def main():
             dt
         )
         action = optimized_actions[0]
-        print(f'First={action}, Min={jnp.min(optimized_actions)}, Max={jnp.max(optimized_actions)}')
+        # print(f'First={action}, Min={jnp.min(optimized_actions)}, Max={jnp.max(optimized_actions)}')
 
         # Generate full optimal trajectory
         _, trajs = mppi_rollout(state, optimized_actions, params, cost_fn, terminal_cost_fn, dt)
@@ -176,10 +179,15 @@ def main():
         rollout_ys.append(np.asarray(rollouts.dubins_state.y))
 
         # Advance simulation
+        h_vector = compute_h_vector(state, params)
+        if (h_vector > 0.0).any():
+            print(f'h(x) = {compute_h_vector(state, params)}')
+
         state = step_state(state, action, params, dt)
         xs.append(float(state.dubins_state.x))
         ys.append(float(state.dubins_state.y))
         thetas.append(float(state.dubins_state.theta))
+        
         
         obs_pos = state.obstacle_state.position(obs_params)
         obs_xs.append(float(obs_pos[0]))
