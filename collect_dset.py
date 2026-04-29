@@ -1,11 +1,10 @@
 from environment.obstacle_dynamics import ObstacleParameters, ObstacleState, from_many
-from environment.environment_dynamics import State, Parameters
+from environment.environment_dynamics import State, Parameters, step_state
 from environment.dubins_dynamics import DubinsParameters, DubinsState
-from environment.dubins_dynamics import DubinsState
+from controllers.mppi import MPPIDynamicParameters, MPPIParameters, MPPIState, mppi_compute_action
 import jax
 import jax.numpy as jnp
 import functools as ft
-
 
 def get_dubins_parameters() -> DubinsParameters:
     return DubinsParameters(
@@ -56,7 +55,7 @@ def get_parameters() -> Parameters:
 
 def sample_start_state(key: jnp.ndarray, p: Parameters) -> State:
     N_OBSTACLES = len(p.obstacle_params.start_point)
-    obstacles_key, x_key, y_key, v_key, theta_key = jax.random.split(key, 20)
+    obstacles_key, x_key, y_key, v_key, theta_key = jax.random.split(key, 5)
 
     obstacle_states = []
     for key in jax.random.split(obstacles_key, N_OBSTACLES):
@@ -82,19 +81,67 @@ def sample_start_state(key: jnp.ndarray, p: Parameters) -> State:
     )
 
 
-NUM_SAMPLES = 1024
+def get_mppi_controller(horizon: int, num_rollouts: int, temp: float, variance: list):
+    mppi_state = MPPIState(
+        actions=jnp.full((horizon, 2), fill_value=0.0),
+        key=jax.random.key(seed=0),
+    )
+    mppi_params = MPPIParameters(
+        num_rollouts=num_rollouts,
+        num_iters=1,
+    )
+    mppi_dynamic_params = MPPIDynamicParameters(
+        temp=jnp.array(temp),
+        variance=jnp.array(variance),
+    )
+    return mppi_state, mppi_params, mppi_dynamic_params
+
+
+def rollout_state_with_mppi(state: State, params: Parameters, dt: float, max_rollout_length: int, cost_fn, terminal_cost_fn, done_fn, h_fn, horizon: int, num_rollouts: int, temp: float, variance: list): 
+    mppi_state, mppi_params, mppi_dynamics_params = get_mppi_controller(horizon, num_rollouts, temp, variance)
+    
+    def _step(carry, _):
+        state, mppi_state = carry
+        done = done_fn(state).any()
+
+        optimized_actions, mppi_state, _ = mppi_compute_action(
+            state,
+            params,
+            cost_fn,
+            terminal_cost_fn,
+            mppi_state,
+            mppi_params,
+            mppi_dynamics_params,
+            dt
+        )
+        action = optimized_actions[0]
+        new_state = step_state(state, action, params, dt)
+
+        return (new_state, mppi_state), nstate,
+
+    _, states = jax.lax.scan(_step, init=(state, mppi_state), xs=None, length=max_rollout_length)
+
+    hs = jax.vmap(h_fn)(states)
+
+    return (states, hs)
+    
+
+NUM_ROLLOUTS = 10000
+NUM_ROLLOUTS_PER_BATCH = 1024
 
 
 def main():
+    
     triples = []
     key = jax.random.key(seed=0)
 
-    parameters = Parameters
+    parameters = get_parameters()
 
-    sample_count = 0
-    while sample_count < NUM_SAMPLES:
-        key, sample_key = jax.random.split(key)
-        start_state = sample_start_state(sample_key)
+    keys = jax.random.split(key, NUM_ROLLOUTS)
+
+
+    key, sample_key = jax.random.split(key)
+    start_state = sample_start_state(sample_key)
 
 
 if __name__ == "__main__":
