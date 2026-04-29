@@ -48,8 +48,8 @@ def main():
         end_point=jnp.array([0.0, 0.0]),
     )
     obs_params_2 = ObstacleParameters(
-        radius=jnp.array(0.2),
-        speed=jnp.array(1.0),
+        radius=jnp.array(0.5),
+        speed=jnp.array(0.6),
         start_point=jnp.array([5.7, 4.0]),
         end_point=jnp.array([5.7, 0.0]),
     )
@@ -61,7 +61,7 @@ def main():
         obstacle_state=obs_states)
 
     x_min, x_max = 0.0, 8.0
-    y_min, y_max = 0.0, 4.0
+    y_min, y_max = 2.25, 4.0
     params = Parameters(
         dubins_params=dubins_params,
         obstacle_params=obs_params,
@@ -76,7 +76,7 @@ def main():
     num_steps = 120
     dt = 0.05
 
-    horizon = 40
+    horizon = 20
 
     mppi_state = MPPIState(
         actions=jnp.full((horizon, 2), fill_value=0.0),
