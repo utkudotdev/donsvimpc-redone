@@ -48,7 +48,7 @@ def step_state(
         state.dubins_state, action, params.dubins_params, dt, num_substeps
     )
 
-    obstacle_state = step_obstacle(
+    obstacle_state = jax.vmap(step_obstacle, in_axes=(0, 0, None, None))(
         state.obstacle_state, params.obstacle_params, dt, num_substeps
     )
 

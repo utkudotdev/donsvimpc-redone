@@ -17,6 +17,8 @@ from environment.obstacle_dynamics import ObstacleParameters, ObstacleState
 from environment.dubins_dynamics import DubinsParameters, DubinsState
 
 def main():
+    # Define Dubin's car
+
     dubins_params = DubinsParameters(
         turn_rate_min=jnp.array(-1.0),
         turn_rate_max=jnp.array(1.0),
@@ -25,12 +27,39 @@ def main():
         acceleration_min=jnp.array(-2.0),
         acceleration_max=jnp.array(2.0)
     )
-    obs_params = ObstacleParameters(
+    dubins_state = DubinsState(
+            x=jnp.array(0.5),
+            y=jnp.array(3.5),
+            v=jnp.array(0.0),
+            theta=jnp.array(0.0),
+    )
+
+    # Define obstacle parameters
+
+    obs_state_1 = ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True))
+    obs_state_2 = ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True))
+    obs_states = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), obs_state_1, obs_state_2)
+
+
+    obs_params_1 = ObstacleParameters(
         radius=jnp.array(1.5),
         speed=jnp.array(0.0),
         start_point=jnp.array([4.0, 4.0]),
         end_point=jnp.array([0.0, 0.0]),
     )
+    obs_params_2 = ObstacleParameters(
+        radius=jnp.array(1.5),
+        speed=jnp.array(0.0),
+        start_point=jnp.array([4.0, 2]),
+        end_point=jnp.array([0.0, 0.0]),
+    )
+    obs_params = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), obs_params_1, obs_params_2)
+    
+    # Define environment 
+    state = State(
+        dubins_state=dubins_state,
+        obstacle_state=obs_states)
+
     x_min, x_max = 0.0, 8.0
     y_min, y_max = 0.0, 4.0
     params = Parameters(
@@ -40,16 +69,6 @@ def main():
         x_max=jnp.array(x_max),
         y_min=jnp.array(y_min),
         y_max=jnp.array(y_max),
-    )
-
-    state = State(
-        dubins_state=DubinsState(
-            x=jnp.array(0.5),
-            y=jnp.array(3.5),
-            v=jnp.array(0.0),
-            theta=jnp.array(0.0),
-        ),
-        obstacle_state=ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True)),
     )
 
     goal = jnp.array([ 7.0, 3.5 ])
@@ -89,13 +108,15 @@ def main():
             p.x_min - s.dubins_state.x,
             s.dubins_state.y - p.y_max, 
             p.y_min - s.dubins_state.y]))
-         
+
+
         dubins_position = jnp.array([ s.dubins_state.x, s.dubins_state.y ])
         obstacle_position = s.obstacle_state.position(p.obstacle_params)
-        
-        signed_distance = jnp.linalg.norm(dubins_position - obstacle_position) - p.obstacle_params.radius
-        
-        h_obstacles = -signed_distance 
+
+        signed_distances = jnp.linalg.norm(dubins_position - obstacle_position, axis=1) - p.obstacle_params.radius
+        signed_distance = jnp.min(signed_distances)
+
+        h_obstacles = -signed_distance
 
         return jnp.array([
             h_obstacles, 
@@ -149,8 +170,8 @@ def main():
 
     xs, ys, thetas = [float(state.dubins_state.x)], [float(state.dubins_state.y)], [float(state.dubins_state.theta)]
     
-    obs_pos = state.obstacle_state.position(obs_params)
-    obs_xs, obs_ys = [float(obs_pos[0])], [float(obs_pos[1])]
+    obs_pos = jax.vmap(ObstacleState.position)(state.obstacle_state, obs_params)
+    obs_xs, obs_ys = [np.asarray(obs_pos[:, 0])], [np.asarray(obs_pos[:, 1])]
     
     rollout_xs, rollout_ys = [], []  # per-step (num_rollouts, horizon)
     opt_rollout_xs, opt_rollout_ys = [], [] # per-step (horizon, )
@@ -189,9 +210,9 @@ def main():
         thetas.append(float(state.dubins_state.theta))
         
         
-        obs_pos = state.obstacle_state.position(obs_params)
-        obs_xs.append(float(obs_pos[0]))
-        obs_ys.append(float(obs_pos[1]))
+        obs_pos = jax.vmap(ObstacleState.position)(state.obstacle_state, obs_params)
+        obs_xs.append(np.asarray(obs_pos[:, 0]))
+        obs_ys.append(np.asarray(obs_pos[:, 1]))
 
     xs = np.array(xs)
     ys = np.array(ys)
@@ -221,8 +242,13 @@ def main():
     (car_body,) = ax.plot([], [], "o", color="tab:blue", markersize=8)
     
     # --- VISUALIZATION UPDATE FOR OBSTACLE ---
-    obstacle_body = patches.Circle((0, 0), radius=float(obs_params.radius), color="tab:red", alpha=0.5, label="obstacle")
-    ax.add_patch(obstacle_body)
+    obstacle_bodies = []
+    num_obstacles = obs_xs.shape[1]
+    radii = np.asarray(obs_params.radius)
+    for k in range(num_obstacles):
+        body = patches.Circle((obs_xs[0, k], obs_ys[0, k]), radius=float(radii[k]), color="tab:red", alpha=0.5, label="obstacle" if k == 0 else None)
+        ax.add_patch(body)
+        obstacle_bodies.append(body)
     
     title = ax.set_title("")
     ax.legend(loc="upper left")
@@ -230,7 +256,8 @@ def main():
     def update(i):
         trail.set_data(xs[: i + 1], ys[: i + 1])
         car_body.set_data([xs[i]], [ys[i]])
-        obstacle_body.set_center((obs_xs[i], obs_ys[i]))
+        for k in range(num_obstacles):
+            obstacle_bodies[k].set_center((obs_xs[i, k], obs_ys[i, k]))
         
         # --- DUBINS CAR HEADING CALCULATION ---
         # Length of the directional pointer
@@ -256,7 +283,7 @@ def main():
 
         title.set_text(f"step {i}/{num_steps}   pos=({xs[i]:+.2f}, {ys[i]:+.2f})")
         
-        return [trail, car_body, car_heading, obstacle_body, title, *rollout_lines, opt_rollout_line]
+        return [trail, car_body, car_heading, title, *obstacle_bodies, *rollout_lines, opt_rollout_line]
 
     _anim = FuncAnimation(
         fig, update, frames=len(xs), interval=dt * 1000, blit=False, repeat=False
