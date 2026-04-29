@@ -48,10 +48,10 @@ def main():
         end_point=jnp.array([0.0, 0.0]),
     )
     obs_params_2 = ObstacleParameters(
-        radius=jnp.array(1.5),
-        speed=jnp.array(0.0),
-        start_point=jnp.array([4.0, 2]),
-        end_point=jnp.array([0.0, 0.0]),
+        radius=jnp.array(0.2),
+        speed=jnp.array(1.0),
+        start_point=jnp.array([5.7, 4.0]),
+        end_point=jnp.array([5.7, 0.0]),
     )
     obs_params = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), obs_params_1, obs_params_2)
     
@@ -76,7 +76,7 @@ def main():
     num_steps = 120
     dt = 0.05
 
-    horizon = 20
+    horizon = 40
 
     mppi_state = MPPIState(
         actions=jnp.full((horizon, 2), fill_value=0.0),
@@ -111,9 +111,9 @@ def main():
 
 
         dubins_position = jnp.array([ s.dubins_state.x, s.dubins_state.y ])
-        obstacle_position = s.obstacle_state.position(p.obstacle_params)
+        obstacle_positions = jax.vmap(ObstacleState.position)(s.obstacle_state, p.obstacle_params)
 
-        signed_distances = jnp.linalg.norm(dubins_position - obstacle_position, axis=1) - p.obstacle_params.radius
+        signed_distances = jnp.linalg.norm(dubins_position - obstacle_positions, axis=1) - p.obstacle_params.radius
         signed_distance = jnp.min(signed_distances)
 
         h_obstacles = -signed_distance
