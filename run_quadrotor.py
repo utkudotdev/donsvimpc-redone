@@ -76,8 +76,7 @@ def main():
     )
     mppi_dynamic_params = MPPIDynamicParameters(
         temp=jnp.array(2048.0),
-        variance=jnp.array([0.01, 0.01]),
-        dt=jnp.array(dt),
+        variance=jnp.array([0.01, 0.01])
     )
     
     # x z theta vx vz w
@@ -94,7 +93,7 @@ def main():
         ctrl = jnp.sum(a**2)
         angle = q.theta**2
         angular_vel = q.w**2
-        return 100 * pos_err + 20.0 * angle # + 0.01 * vel #+ 10.0 * angular_vel + 100.0 * ctrl
+        return 100 * pos_err #+ 20.0 * angle # + 0.01 * vel #+ 10.0 * angular_vel + 100.0 * ctrl
 
     def terminal_cost_fn(s: State) -> jnp.ndarray:
         q = s.quadrotor_state
@@ -102,7 +101,7 @@ def main():
         vel = q.vx**2 + q.vz**2
         angle = q.theta**2
         angular_vel = q.w**2
-        return 100 * pos_err + 50.0 * angle + 50.0 * vel# + 10.0 * angular_vel
+        return 100 * pos_err# + 50.0 * angle + 50.0 * vel# + 10.0 * angular_vel
 
     xs, zs, thetas = [float(state.quadrotor_state.x)], [float(state.quadrotor_state.z)], [float(state.quadrotor_state.theta)]
     rollout_xs, rollout_zs = [], []  # per-step (num_rollouts, horizon)
@@ -117,12 +116,13 @@ def main():
             mppi_state,
             mppi_params,
             mppi_dynamic_params,
+            dt
         )
         action = optimized_actions[0]
         print(f'First={action-hover}, Min={jnp.min(optimized_actions) - hover}, Max={jnp.max(optimized_actions) - hover}')
 
         # Generate full optimal trajectory
-        _, trajs = mppi_rollout(state, optimized_actions, params, cost_fn, terminal_cost_fn, mppi_dynamic_params.dt)
+        _, trajs = mppi_rollout(state, optimized_actions, params, cost_fn, terminal_cost_fn, dt)
         opt_rollout_xs.append(np.asarray(trajs.quadrotor_state.x))
         opt_rollout_zs.append(np.asarray(trajs.quadrotor_state.z))
 

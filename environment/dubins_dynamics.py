@@ -14,6 +14,8 @@ class DubinsParameters:
     turn_rate_max: jnp.ndarray
     velocity_min: jnp.ndarray
     velocity_max: jnp.ndarray
+    acceleration_min: jnp.ndarray
+    acceleration_max: jnp.ndarray
 
 
 @register_dataclass
@@ -21,6 +23,7 @@ class DubinsParameters:
 class DubinsState:
     x: jnp.ndarray
     y: jnp.ndarray
+    v: jnp.ndarray
     theta: jnp.ndarray
 
 @partial(jax.jit, static_argnames=("num_substeps",))
@@ -36,17 +39,19 @@ def step_dubins(
     `action = [v, theta_dot]` are commanded thrusts for the two rotors.
     """
     sub_dt = dt / num_substeps
-    v = jnp.clip(action[0], params.velocity_min, params.velocity_max)
+
+    v_dot = jnp.clip(action[0], params.acceleration_min, params.acceleration_max)
     theta_dot = jnp.clip(action[1], params.turn_rate_min, params.turn_rate_max)
 
     def substep(s: DubinsState, _) -> tuple[DubinsState, None]:
-        x_d = v * jnp.cos(s.theta)
-        y_d = v * jnp.sin(s.theta)
+        x_d = s.v * jnp.cos(s.theta)
+        y_d = s.v * jnp.sin(s.theta)
         
         return (
             DubinsState(
                 x=s.x + x_d * sub_dt,
                 y=s.y + y_d * sub_dt,
+                v=s.v + v_dot * sub_dt,
                 theta=s.theta + theta_dot * sub_dt,
             ),
             None,
