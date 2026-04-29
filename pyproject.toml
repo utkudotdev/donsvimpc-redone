@@ -18,5 +18,7 @@ controllers = { workspace = true }
 members = [
     "environment",
     "controllers",
+    "tasks",
+    "safety",
 ]
 

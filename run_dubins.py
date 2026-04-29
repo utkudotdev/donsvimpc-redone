@@ -16,6 +16,9 @@ from controllers.mppi import (
 from environment.obstacle_dynamics import ObstacleParameters, ObstacleState
 from environment.dubins_dynamics import DubinsParameters, DubinsState
 
+from safety import cbf
+from tasks.dubins import compute_h_vector, make_goal_reaching_task
+
 def main():
     # Define Dubin's car
 
@@ -29,7 +32,7 @@ def main():
     )
     dubins_state = DubinsState(
             x=jnp.array(0.5),
-            y=jnp.array(3.5),
+            y=jnp.array(2.75),
             v=jnp.array(0.0),
             theta=jnp.array(0.0),
     )
@@ -38,7 +41,8 @@ def main():
 
     obs_state_1 = ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True))
     obs_state_2 = ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True))
-    obs_states = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), obs_state_1, obs_state_2)
+    obs_state_3 = ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True))
+    obs_states = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), obs_state_1, obs_state_2, obs_state_3)
 
 
     obs_params_1 = ObstacleParameters(
@@ -51,9 +55,15 @@ def main():
         radius=jnp.array(0.5),
         speed=jnp.array(0.6),
         start_point=jnp.array([5.7, 4.0]),
+        end_point=jnp.array([5.7, 2.25]),
+    )
+    obs_params_3 = ObstacleParameters(
+        radius=jnp.array(0.5),
+        speed=jnp.array(0.0),
+        start_point=jnp.array([5.7, 4.0]),
         end_point=jnp.array([5.7, 0.0]),
     )
-    obs_params = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), obs_params_1, obs_params_2)
+    obs_params = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), obs_params_1, obs_params_2, obs_params_3)
     
     # Define environment 
     state = State(
@@ -91,52 +101,9 @@ def main():
         variance=jnp.array([1.0, 1.0]),
     )
 
-    def task_cost_fn(s: State, a: jnp.ndarray) -> jnp.ndarray:
-        d = s.dubins_state
-        pos_err = (d.x - goal[0]) ** 2 + (d.y - goal[1]) ** 2
-        ctrl = jnp.sum(a**2)
-        return pos_err + 0.01 * ctrl
-
-    def task_terminal_cost_fn(s: State) -> jnp.ndarray:
-        d = s.dubins_state
-        pos_err = (d.x - goal[0]) ** 2 + (d.y - goal[1]) ** 2
-        return 100 * pos_err
-
-    def compute_h_vector(s: State, p: Parameters):
-        h_boundary = jnp.max(jnp.array([ 
-            s.dubins_state.x - p.x_max, 
-            p.x_min - s.dubins_state.x,
-            s.dubins_state.y - p.y_max, 
-            p.y_min - s.dubins_state.y]))
-
-
-        dubins_position = jnp.array([ s.dubins_state.x, s.dubins_state.y ])
-        obstacle_positions = jax.vmap(ObstacleState.position)(s.obstacle_state, p.obstacle_params)
-
-        signed_distances = jnp.linalg.norm(dubins_position - obstacle_positions, axis=1) - p.obstacle_params.radius
-        signed_distance = jnp.min(signed_distances)
-
-        h_obstacles = -signed_distance
-
-        return jnp.array([
-            h_obstacles, 
-            h_boundary
-        ])
-
-    def compute_cbf_violation(s: State, a: jnp.ndarray, p: Parameters, alpha: jnp.ndarray):
-        h = jnp.max(compute_h_vector(s, p))
-        s_prime = step_state(s, a, p, dt)
-        h_prime = jnp.max(compute_h_vector(s_prime, p))
-        return h_prime + (alpha - 1) * h
-        
-    def cost_fn(s: State, a: jnp.ndarray, p: Parameters):
-        h_violation = compute_cbf_violation(s, a, p, alpha=0.95)
-        cbf_cost = jnp.where(h_violation > 0, 100 * h_violation, 0.0)
-        task_cost = task_cost_fn(s, a)
-        return task_cost + 10 * cbf_cost    
-        
-    def terminal_cost_fn(s: State, p: Parameters):
-        return task_terminal_cost_fn(s)
+    task_cost_fn, task_terminal_cost_fn = make_goal_reaching_task(goal)
+    compute_cbf_violation = cbf.cbf_violation(compute_h_vector, dt)
+    cost_fn, terminal_cost_fn = cbf.embed_cbf_violation(compute_cbf_violation, task_cost_fn, task_terminal_cost_fn)
 
     # --- GRID VISUALIZATION ---
     grid_x = jnp.linspace(x_min, x_max, 50)
@@ -175,8 +142,10 @@ def main():
     
     rollout_xs, rollout_ys = [], []  # per-step (num_rollouts, horizon)
     opt_rollout_xs, opt_rollout_ys = [], [] # per-step (horizon, )
+
+    violation_steps = set()
     
-    for _ in range(num_steps):
+    for which_step in range(num_steps):
         optimized_actions, mppi_state, rollouts = mppi_compute_action(
             state,
             params,
@@ -202,6 +171,7 @@ def main():
         # Advance simulation
         h_vector = compute_h_vector(state, params)
         if (h_vector > 0.0).any():
+            violation_steps.add(which_step)
             print(f'h(x) = {compute_h_vector(state, params)}')
 
         state = step_state(state, action, params, dt)
@@ -249,7 +219,9 @@ def main():
         body = patches.Circle((obs_xs[0, k], obs_ys[0, k]), radius=float(radii[k]), color="tab:red", alpha=0.5, label="obstacle" if k == 0 else None)
         ax.add_patch(body)
         obstacle_bodies.append(body)
-    
+
+    (violations,) = ax.plot([], [], "o", color="tab:red", markersize=4)
+
     title = ax.set_title("")
     ax.legend(loc="upper left")
 
@@ -265,21 +237,23 @@ def main():
 
         # Calculate where the pointer should end based on current theta
         dx = heading_length * np.cos(thetas[i])
-        dz = heading_length * np.sin(thetas[i])
+        dy = heading_length * np.sin(thetas[i])
         
         # Draw the pointer from the car's center outward
-        car_heading.set_data([xs[i], xs[i] + dx], [ys[i], ys[i] + dz])
+        car_heading.set_data([xs[i], xs[i] + dx], [ys[i], ys[i] + dy])
 
         if i < len(rollout_xs):
             rx = rollout_xs[i]
-            rz = rollout_ys[i]
+            ry = rollout_ys[i]
             for k, line in enumerate(rollout_lines):
-                line.set_data(rx[k], rz[k])
+                line.set_data(rx[k], ry[k])
         
         if i < len(opt_rollout_xs):
             rx = opt_rollout_xs[i]
-            rz = opt_rollout_ys[i]
-            opt_rollout_line.set_data(rx, rz)
+            ry = opt_rollout_ys[i]
+            opt_rollout_line.set_data(rx, ry)
+
+        violations.set_data([xs[s] for s in violation_steps], [ys[s] for s in violation_steps])
 
         title.set_text(f"step {i}/{num_steps}   pos=({xs[i]:+.2f}, {ys[i]:+.2f})")
         
