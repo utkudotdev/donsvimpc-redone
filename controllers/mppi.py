@@ -5,7 +5,7 @@ import jax
 import jax.numpy as jnp
 from jax.tree_util import register_dataclass
 
-from environment.environment_dynamics import Parameters, State, step_state
+from dynamics.environment_dynamics import Parameters, State, step_state
 
 
 @register_dataclass

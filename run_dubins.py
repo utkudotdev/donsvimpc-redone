@@ -5,7 +5,7 @@ import matplotlib.patches as patches
 import numpy as np
 from matplotlib.animation import FuncAnimation
 
-from environment.environment_dynamics import Parameters, State, step_state
+from dynamics.environment_dynamics import Parameters, State, step_state
 from controllers.mppi import (
     MPPIDynamicParameters,
     MPPIParameters,
@@ -13,8 +13,8 @@ from controllers.mppi import (
     mppi_compute_action,
     mppi_rollout
 )
-from environment.obstacle_dynamics import ObstacleParameters, ObstacleState
-from environment.dubins_dynamics import DubinsParameters, DubinsState
+from dynamics.obstacle_dynamics import ObstacleParameters, ObstacleState
+from dynamics.dubins_dynamics import DubinsParameters, DubinsState
 
 from safety import cbf
 from tasks.dubins import compute_h_vector, make_goal_reaching_task

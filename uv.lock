@@ -10,7 +10,7 @@ resolution-markers = [
 members = [
     "controllers",
     "donsvimpc-redone",
-    "environment",
+    "dynamics",
     "safety",
     "tasks",
 ]
@@ -86,11 +86,11 @@ name = "controllers"
 version = "0.1.0"
 source = { editable = "controllers" }
 dependencies = [
-    { name = "environment" },
+    { name = "dynamics" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "environment", editable = "environment" }]
+requires-dist = [{ name = "dynamics", editable = "dynamics" }]
 
 [[package]]
 name = "cycler"
@@ -119,9 +119,9 @@ requires-dist = [
 ]
 
 [[package]]
-name = "environment"
+name = "dynamics"
 version = "0.1.0"
-source = { editable = "environment" }
+source = { editable = "dynamics" }
 
 [[package]]
 name = "fonttools"
@@ -558,7 +558,7 @@ wheels = [
 [[package]]
 name = "safety"
 version = "0.1.0"
-source = { virtual = "safety" }
+source = { editable = "safety" }
 
 [[package]]
 name = "scipy"
@@ -633,4 +633,4 @@ wheels = [
 [[package]]
 name = "tasks"
 version = "0.1.0"
-source = { virtual = "tasks" }
+source = { editable = "tasks" }

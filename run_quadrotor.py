@@ -4,16 +4,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
 
-from environment.environment_dynamics import Parameters, State, step_state
-from environment.mppi import (
+from dynamics.environment_dynamics import Parameters, State, step_state
+from dynamics.mppi import (
     MPPIDynamicParameters,
     MPPIParameters,
     MPPIState,
     mppi_compute_action,
     mppi_rollout
 )
-from environment.obstacle_dynamics import ObstacleParameters, ObstacleState
-from environment.quadrotor_dynamics import (
+from dynamics.obstacle_dynamics import ObstacleParameters, ObstacleState
+from dynamics.quadrotor_dynamics import (
     GRAVITY,
     QuadrotorParameters,
     QuadrotorState,

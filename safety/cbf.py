@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from environment.environment_dynamics import State, Parameters, step_state
+from dynamics.environment_dynamics import State, Parameters, step_state
 
 
 def cbf_violation(h_fn, dt):

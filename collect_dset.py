@@ -1,6 +1,6 @@
-from environment.obstacle_dynamics import ObstacleParameters, ObstacleState, from_many
-from environment.environment_dynamics import State, Parameters, step_state
-from environment.dubins_dynamics import DubinsParameters, DubinsState
+from dynamics.obstacle_dynamics import ObstacleParameters, ObstacleState, from_many
+from dynamics.environment_dynamics import State, Parameters, step_state
+from dynamics.dubins_dynamics import DubinsParameters, DubinsState
 from controllers.mppi import (
     MPPIDynamicParameters,
     MPPIParameters,
@@ -195,8 +195,7 @@ def main():
         return (states, hs)
 
     states, hs = jax.lax.map(_inner, rollout_keys, batch_size=NUM_ROLLOUTS_PER_BATCH)
-    print(states)
-    print(hs)
+    
 
 
 if __name__ == "__main__":

@@ -11,12 +11,14 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-environment = { workspace = true }
+dynamics = { workspace = true }
 controllers = { workspace = true }
+tasks = { workspace = true }
+safety = { workspace = true }
 
 [tool.uv.workspace]
 members = [
-    "environment",
+    "dynamics",
     "controllers",
     "tasks",
     "safety",

@@ -1,5 +1,5 @@
-from environment.environment_dynamics import State, Parameters
-from environment.obstacle_dynamics import ObstacleState
+from dynamics.environment_dynamics import State, Parameters
+from dynamics.obstacle_dynamics import ObstacleState
 
 import jax.numpy as jnp
 import jax
