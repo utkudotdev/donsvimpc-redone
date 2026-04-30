@@ -1,10 +1,17 @@
 from environment.obstacle_dynamics import ObstacleParameters, ObstacleState, from_many
 from environment.environment_dynamics import State, Parameters, step_state
 from environment.dubins_dynamics import DubinsParameters, DubinsState
-from controllers.mppi import MPPIDynamicParameters, MPPIParameters, MPPIState, mppi_compute_action
+from controllers.mppi import (
+    MPPIDynamicParameters,
+    MPPIParameters,
+    MPPIState,
+    mppi_compute_action,
+)
 import jax
 import jax.numpy as jnp
-import functools as ft
+from tasks.dubins import make_goal_reaching_task, compute_h_vector
+from safety import cbf
+
 
 def get_dubins_parameters() -> DubinsParameters:
     return DubinsParameters(
@@ -77,7 +84,7 @@ def sample_start_state(key: jnp.ndarray, p: Parameters) -> State:
             ),
             theta=jax.random.uniform(theta_key, minval=0, maxval=2 * jnp.pi),
         ),
-        obstacle_state=from_many(obstacle_states),
+        obstacle_state=from_many(*obstacle_states),
     )
 
 
@@ -97,13 +104,25 @@ def get_mppi_controller(horizon: int, num_rollouts: int, temp: float, variance: 
     return mppi_state, mppi_params, mppi_dynamic_params
 
 
-def rollout_state_with_mppi(state: State, params: Parameters, dt: float, max_rollout_length: int, cost_fn, terminal_cost_fn, done_fn, h_fn, horizon: int, num_rollouts: int, temp: float, variance: list): 
-    mppi_state, mppi_params, mppi_dynamics_params = get_mppi_controller(horizon, num_rollouts, temp, variance)
-    
+def rollout_state_with_mppi(
+    state: State,
+    params: Parameters,
+    dt: float,
+    max_rollout_length: int,
+    cost_fn,
+    terminal_cost_fn,
+    h_fn,
+    horizon: int,
+    num_rollouts: int,
+    temp: float,
+    variance: list,
+):
+    mppi_state, mppi_params, mppi_dynamics_params = get_mppi_controller(
+        horizon, num_rollouts, temp, variance
+    )
+
     def _step(carry, _):
         state, mppi_state = carry
-        done = done_fn(state).any()
-
         optimized_actions, mppi_state, _ = mppi_compute_action(
             state,
             params,
@@ -112,38 +131,73 @@ def rollout_state_with_mppi(state: State, params: Parameters, dt: float, max_rol
             mppi_state,
             mppi_params,
             mppi_dynamics_params,
-            dt
+            dt,
         )
         action = optimized_actions[0]
         new_state = step_state(state, action, params, dt)
 
-        return (new_state, mppi_state), (state, done)
+        return (
+            (new_state, mppi_state),
+            state,
+        )
 
-    _, states = jax.lax.scan(_step, init=(state, mppi_state), xs=None, length=max_rollout_length)
+    _, states = jax.lax.scan(
+        _step, init=(state, mppi_state), xs=None, length=max_rollout_length
+    )
 
-    hs = jax.vmap(h_fn)(states)
+    hs = jax.vmap(h_fn, in_axes=(0, None))(states, params)
 
     return (states, hs)
-    
+
 
 NUM_ROLLOUTS = 10000
 NUM_ROLLOUTS_PER_BATCH = 1024
+MAX_ROLLOUT_LENGTH = 256
+DT = 0.05
+
+MPPI_HORIZON = 20
+MPPI_NUM_ROLLOUTS = 128
+MPPI_TEMP = 1.0
+MPPI_VARIANCE = [1.0, 1.0]
 
 
 def main():
-    
-    triples = []
     key = jax.random.key(seed=0)
-
     parameters = get_parameters()
 
-    keys = jax.random.split(key, NUM_ROLLOUTS)
+    rollout_keys = jax.random.split(key, NUM_ROLLOUTS)
 
+    def _inner(key: jnp.ndarray):
+        start_key, goal_key = jax.random.split(key)
+        start_state = sample_start_state(start_key, parameters)
+        goal = jax.random.uniform(goal_key, shape=(3,))
 
-    key, sample_key = jax.random.split(key)
-    start_state = sample_start_state(sample_key)
+        cost_fn, terminal_cost_fn, _ = make_goal_reaching_task(goal)
+        h_vio_fn = cbf.cbf_violation(compute_h_vector, DT)
+        cost_fn, terminal_cost_fn = cbf.embed_cbf_violation(
+            h_vio_fn, cost_fn, terminal_cost_fn
+        )
+
+        states, hs = rollout_state_with_mppi(
+            start_state,
+            parameters,
+            DT,
+            MAX_ROLLOUT_LENGTH,
+            cost_fn,
+            terminal_cost_fn,
+            compute_h_vector,
+            MPPI_HORIZON,
+            MPPI_NUM_ROLLOUTS,
+            MPPI_TEMP,
+            MPPI_VARIANCE,
+        )
+
+        return (states, hs)
+
+    states, hs = jax.lax.map(_inner, rollout_keys, batch_size=NUM_ROLLOUTS_PER_BATCH)
+    print(states)
+    print(hs)
 
 
 if __name__ == "__main__":
-    pass
-
+    main()
