@@ -124,7 +124,24 @@ def main():
     def _inner(key: jnp.ndarray):
         start_key, goal_key = jax.random.split(key)
         start_state = sample_start_state(start_key, parameters)
-        goal = jax.random.uniform(goal_key, shape=(3,))
+        goal = jax.random.uniform(
+            goal_key,
+            shape=(3,),
+            minval=jnp.array(
+                [
+                    parameters.x_min,
+                    parameters.y_min,
+                    parameters.dubins_params.velocity_min,
+                ]
+            ),
+            maxval=jnp.array(
+                [
+                    parameters.x_max,
+                    parameters.y_max,
+                    parameters.dubins_params.velocity_max,
+                ]
+            ),
+        )
 
         cost_fn, terminal_cost_fn, _ = make_goal_reaching_task(goal)
         h_vio_fn = cbf.cbf_violation(compute_h_vector, DT)
