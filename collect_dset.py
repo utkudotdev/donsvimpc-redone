@@ -1,6 +1,6 @@
-from dynamics.obstacle_dynamics import ObstacleParameters, ObstacleState, from_many
+from dynamics.obstacle_dynamics import ObstacleState, from_many
 from dynamics.environment_dynamics import State, Parameters, step_state
-from dynamics.dubins_dynamics import DubinsParameters, DubinsState
+from dynamics.dubins_dynamics import DubinsState
 from controllers.mppi import (
     MPPIDynamicParameters,
     MPPIParameters,
@@ -11,53 +11,7 @@ import jax
 import jax.numpy as jnp
 from tasks.dubins import make_goal_reaching_task, compute_h_vector
 from safety import cbf
-
-
-def get_dubins_parameters() -> DubinsParameters:
-    return DubinsParameters(
-        turn_rate_min=jnp.array(-1.0),
-        turn_rate_max=jnp.array(1.0),
-        velocity_min=jnp.array(-1.0),
-        velocity_max=jnp.array(1.0),
-        acceleration_min=jnp.array(-2.0),
-        acceleration_max=jnp.array(2.0),
-    )
-
-
-def get_obstacle_parameters() -> ObstacleParameters:
-    return from_many(
-        ObstacleParameters(
-            radius=jnp.array(1.5),
-            speed=jnp.array(0.0),
-            start_point=jnp.array([4.0, 4.0]),
-            end_point=jnp.array([0.0, 0.0]),
-        ),
-        ObstacleParameters(
-            radius=jnp.array(0.5),
-            speed=jnp.array(0.6),
-            start_point=jnp.array([5.7, 4.0]),
-            end_point=jnp.array([5.7, 2.25]),
-        ),
-        ObstacleParameters(
-            radius=jnp.array(0.5),
-            speed=jnp.array(0.0),
-            start_point=jnp.array([5.7, 4.0]),
-            end_point=jnp.array([5.7, 0.0]),
-        ),
-    )
-
-
-def get_parameters() -> Parameters:
-    x_min, x_max = 0.0, 8.0
-    y_min, y_max = 2.25, 4.0
-    return Parameters(
-        dubins_params=get_dubins_parameters(),
-        obstacle_params=get_obstacle_parameters(),
-        x_min=jnp.array(x_min),
-        x_max=jnp.array(x_max),
-        y_min=jnp.array(y_min),
-        y_max=jnp.array(y_max),
-    )
+from environments.dubins import get_environment_parameters
 
 
 def sample_start_state(key: jnp.ndarray, p: Parameters) -> State:
@@ -163,7 +117,7 @@ MPPI_VARIANCE = [1.0, 1.0]
 
 def main():
     key = jax.random.key(seed=0)
-    parameters = get_parameters()
+    parameters = get_environment_parameters("basic")
 
     rollout_keys = jax.random.split(key, NUM_ROLLOUTS)
 
@@ -195,7 +149,7 @@ def main():
         return (states, hs)
 
     states, hs = jax.lax.map(_inner, rollout_keys, batch_size=NUM_ROLLOUTS_PER_BATCH)
-    
+    jnp.savez("dset.npz", states=states, hs=hs)
 
 
 if __name__ == "__main__":

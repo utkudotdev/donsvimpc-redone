@@ -22,5 +22,6 @@ members = [
     "controllers",
     "tasks",
     "safety",
+    "environments",
 ]
 

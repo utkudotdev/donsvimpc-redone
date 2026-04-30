@@ -11,6 +11,7 @@ members = [
     "controllers",
     "donsvimpc-redone",
     "dynamics",
+    "environments",
     "safety",
     "tasks",
 ]
@@ -122,6 +123,17 @@ requires-dist = [
 name = "dynamics"
 version = "0.1.0"
 source = { editable = "dynamics" }
+
+[[package]]
+name = "environments"
+version = "0.1.0"
+source = { virtual = "environments" }
+dependencies = [
+    { name = "dynamics" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "dynamics", editable = "dynamics" }]
 
 [[package]]
 name = "fonttools"
