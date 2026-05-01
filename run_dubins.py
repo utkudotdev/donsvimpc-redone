@@ -11,7 +11,7 @@ from controllers.mppi import (
     MPPIParameters,
     MPPIState,
     mppi_compute_action,
-    mppi_rollout
+    mppi_rollout,
 )
 from dynamics.obstacle_dynamics import ObstacleParameters, ObstacleState
 from dynamics.dubins_dynamics import DubinsParameters, DubinsState
@@ -19,31 +19,33 @@ from dynamics.dubins_dynamics import DubinsParameters, DubinsState
 from safety import cbf
 from tasks.dubins import compute_h_vector, make_goal_reaching_task
 
-def main():
-    # Define Dubin's car
 
+def main():
+    use_ncbf = True
+
+    # Define Dubin's car
     dubins_params = DubinsParameters(
         turn_rate_min=jnp.array(-1.0),
         turn_rate_max=jnp.array(1.0),
         velocity_min=jnp.array(-1.0),
         velocity_max=jnp.array(1.0),
         acceleration_min=jnp.array(-2.0),
-        acceleration_max=jnp.array(2.0)
+        acceleration_max=jnp.array(2.0),
     )
     dubins_state = DubinsState(
-            x=jnp.array(0.5),
-            y=jnp.array(2.75),
-            v=jnp.array(0.0),
-            theta=jnp.array(0.0),
+        x=jnp.array(0.5),
+        y=jnp.array(2.75),
+        v=jnp.array(0.0),
+        theta=jnp.array(0.0),
     )
 
     # Define obstacle parameters
-
     obs_state_1 = ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True))
     obs_state_2 = ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True))
     obs_state_3 = ObstacleState(alpha=jnp.array(0.0), forward=jnp.array(True))
-    obs_states = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), obs_state_1, obs_state_2, obs_state_3)
-
+    obs_states = jax.tree_util.tree_map(
+        lambda *leaves: jnp.stack(leaves), obs_state_1, obs_state_2, obs_state_3
+    )
 
     obs_params_1 = ObstacleParameters(
         radius=jnp.array(1.5),
@@ -63,12 +65,12 @@ def main():
         start_point=jnp.array([5.7, 4.0]),
         end_point=jnp.array([5.7, 0.0]),
     )
-    obs_params = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), obs_params_1, obs_params_2, obs_params_3)
-    
-    # Define environment 
-    state = State(
-        dubins_state=dubins_state,
-        obstacle_state=obs_states)
+    obs_params = jax.tree_util.tree_map(
+        lambda *leaves: jnp.stack(leaves), obs_params_1, obs_params_2, obs_params_3
+    )
+
+    # Define environment
+    state = State(dubins_state=dubins_state, obstacle_state=obs_states)
 
     x_min, x_max = 0.0, 8.0
     y_min, y_max = 2.25, 4.0
@@ -81,8 +83,8 @@ def main():
         y_max=jnp.array(y_max),
     )
 
-    goal = jnp.array([ 7.0, 3.5, 0.0 ])
-    
+    goal = jnp.array([7.0, 3.5, 0.0])
+
     num_steps = 120
     dt = 0.05
 
@@ -103,7 +105,9 @@ def main():
 
     task_cost_fn, task_terminal_cost_fn, _task_done_fn = make_goal_reaching_task(goal)
     compute_cbf_violation = cbf.cbf_violation(compute_h_vector, dt)
-    cost_fn, terminal_cost_fn = cbf.embed_cbf_violation(compute_cbf_violation, task_cost_fn, task_terminal_cost_fn)
+    cost_fn, terminal_cost_fn = cbf.embed_cbf_violation(
+        compute_cbf_violation, task_cost_fn, task_terminal_cost_fn
+    )
 
     # --- GRID VISUALIZATION ---
     grid_x = jnp.linspace(x_min, x_max, 50)
@@ -113,10 +117,12 @@ def main():
     @jax.jit
     def eval_grid_point(x, y):
         s = State(
-            dubins_state=DubinsState(x=x, y=y, v=jnp.array(0.1), theta=jnp.array(jnp.pi / 2.0)),
-            obstacle_state=state.obstacle_state
+            dubins_state=DubinsState(
+                x=x, y=y, v=jnp.array(0.1), theta=jnp.array(jnp.pi / 2.0)
+            ),
+            obstacle_state=state.obstacle_state,
         )
-        a = jnp.array([0.0, 0.0]) # zero turn rate, small forward velocity
+        a = jnp.array([0.0, 0.0])  # zero turn rate, small forward velocity
         h_val = jnp.max(compute_h_vector(s, params))
         cbf_viol = compute_cbf_violation(s, a, params, alpha=jnp.array(0.95))
         return h_val, cbf_viol
@@ -125,26 +131,30 @@ def main():
     H_vals, CBF_viols = vec_eval(X, Y)
 
     fig_grid, ax_grid = plt.subplots(1, 2, figsize=(12, 5))
-    c1 = ax_grid[0].contourf(X, Y, H_vals, levels=30, cmap='coolwarm')
+    c1 = ax_grid[0].contourf(X, Y, H_vals, levels=30, cmap="coolwarm")
     ax_grid[0].set_title("h(x, y) [>0 is unsafe]")
     fig_grid.colorbar(c1, ax=ax_grid[0])
-    
-    c2 = ax_grid[1].contourf(X, Y, CBF_viols, levels=30, cmap='inferno')
+
+    c2 = ax_grid[1].contourf(X, Y, CBF_viols, levels=30, cmap="inferno")
     ax_grid[1].set_title("CBF Violation (theta=pi/2, v=0.1)")
     fig_grid.colorbar(c2, ax=ax_grid[1])
     plt.show()
     # --------------------------
 
-    xs, ys, thetas = [float(state.dubins_state.x)], [float(state.dubins_state.y)], [float(state.dubins_state.theta)]
-    
+    xs, ys, thetas = (
+        [float(state.dubins_state.x)],
+        [float(state.dubins_state.y)],
+        [float(state.dubins_state.theta)],
+    )
+
     obs_pos = jax.vmap(ObstacleState.position)(state.obstacle_state, obs_params)
     obs_xs, obs_ys = [np.asarray(obs_pos[:, 0])], [np.asarray(obs_pos[:, 1])]
-    
+
     rollout_xs, rollout_ys = [], []  # per-step (num_rollouts, horizon)
-    opt_rollout_xs, opt_rollout_ys = [], [] # per-step (horizon, )
+    opt_rollout_xs, opt_rollout_ys = [], []  # per-step (horizon, )
 
     violation_steps = set()
-    
+
     for which_step in range(num_steps):
         optimized_actions, mppi_state, rollouts = mppi_compute_action(
             state,
@@ -154,13 +164,15 @@ def main():
             mppi_state,
             mppi_params,
             mppi_dynamic_params,
-            dt
+            dt,
         )
         action = optimized_actions[0]
         # print(f'First={action}, Min={jnp.min(optimized_actions)}, Max={jnp.max(optimized_actions)}')
 
         # Generate full optimal trajectory
-        _, trajs = mppi_rollout(state, optimized_actions, params, cost_fn, terminal_cost_fn, dt)
+        _, trajs = mppi_rollout(
+            state, optimized_actions, params, cost_fn, terminal_cost_fn, dt
+        )
         opt_rollout_xs.append(np.asarray(trajs.dubins_state.x))
         opt_rollout_ys.append(np.asarray(trajs.dubins_state.y))
 
@@ -172,14 +184,13 @@ def main():
         h_vector = compute_h_vector(state, params)
         if (h_vector > 0.0).any():
             violation_steps.add(which_step)
-            print(f'h(x) = {compute_h_vector(state, params)}')
+            print(f"h(x) = {compute_h_vector(state, params)}")
 
         state = step_state(state, action, params, dt)
         xs.append(float(state.dubins_state.x))
         ys.append(float(state.dubins_state.y))
         thetas.append(float(state.dubins_state.theta))
-        
-        
+
         obs_pos = jax.vmap(ObstacleState.position)(state.obstacle_state, obs_params)
         obs_xs.append(np.asarray(obs_pos[:, 0]))
         obs_ys.append(np.asarray(obs_pos[:, 1]))
@@ -204,19 +215,25 @@ def main():
 
     (line,) = ax.plot([], [], "-", color="tab:green", alpha=1.0, linewidth=2.0)
     opt_rollout_line = line
-    
+
     # --- VISUALIZATION UPDATE FOR DUBINS CAR ---
     # Draw a line originating from the car's center to indicate its current heading (theta)
     (car_heading,) = ax.plot([], [], "-", color="black", linewidth=2.5)
     # The dot representing the car's center position
     (car_body,) = ax.plot([], [], "o", color="tab:blue", markersize=8)
-    
+
     # --- VISUALIZATION UPDATE FOR OBSTACLE ---
     obstacle_bodies = []
     num_obstacles = obs_xs.shape[1]
     radii = np.asarray(obs_params.radius)
     for k in range(num_obstacles):
-        body = patches.Circle((obs_xs[0, k], obs_ys[0, k]), radius=float(radii[k]), color="tab:red", alpha=0.5, label="obstacle" if k == 0 else None)
+        body = patches.Circle(
+            (obs_xs[0, k], obs_ys[0, k]),
+            radius=float(radii[k]),
+            color="tab:red",
+            alpha=0.5,
+            label="obstacle" if k == 0 else None,
+        )
         ax.add_patch(body)
         obstacle_bodies.append(body)
 
@@ -230,15 +247,15 @@ def main():
         car_body.set_data([xs[i]], [ys[i]])
         for k in range(num_obstacles):
             obstacle_bodies[k].set_center((obs_xs[i, k], obs_ys[i, k]))
-        
+
         # --- DUBINS CAR HEADING CALCULATION ---
         # Length of the directional pointer
-        heading_length = 0.3 
+        heading_length = 0.3
 
         # Calculate where the pointer should end based on current theta
         dx = heading_length * np.cos(thetas[i])
         dy = heading_length * np.sin(thetas[i])
-        
+
         # Draw the pointer from the car's center outward
         car_heading.set_data([xs[i], xs[i] + dx], [ys[i], ys[i] + dy])
 
@@ -247,22 +264,33 @@ def main():
             ry = rollout_ys[i]
             for k, line in enumerate(rollout_lines):
                 line.set_data(rx[k], ry[k])
-        
+
         if i < len(opt_rollout_xs):
             rx = opt_rollout_xs[i]
             ry = opt_rollout_ys[i]
             opt_rollout_line.set_data(rx, ry)
 
-        violations.set_data([xs[s] for s in violation_steps], [ys[s] for s in violation_steps])
+        violations.set_data(
+            [xs[s] for s in violation_steps], [ys[s] for s in violation_steps]
+        )
 
         title.set_text(f"step {i}/{num_steps}   pos=({xs[i]:+.2f}, {ys[i]:+.2f})")
-        
-        return [trail, car_body, car_heading, title, *obstacle_bodies, *rollout_lines, opt_rollout_line]
+
+        return [
+            trail,
+            car_body,
+            car_heading,
+            title,
+            *obstacle_bodies,
+            *rollout_lines,
+            opt_rollout_line,
+        ]
 
     _anim = FuncAnimation(
         fig, update, frames=len(xs), interval=dt * 1000, blit=False, repeat=False
     )
     plt.show()
+
 
 if __name__ == "__main__":
     main()

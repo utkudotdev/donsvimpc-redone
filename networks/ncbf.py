@@ -1,6 +1,7 @@
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from pathlib import Path
 
 
 class NCBF(eqx.Module):
@@ -52,3 +53,14 @@ def compute_ncbf_loss(
     V = ncbf(x_t)
     V_target = compute_ncbf_target(ncbf, gamma, h_t, x_t1)
     return jnp.sum((V - V_target) ** 2)
+
+
+def save_checkpoint(path: Path, model: NCBF, opt_state, epoch: int):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as f:
+        eqx.tree_serialise_leaves(f, (model, opt_state, epoch))
+
+
+def load_checkpoint(path: Path, model_template: NCBF, opt_state_template):
+    with open(path, "rb") as f:
+        return eqx.tree_deserialise_leaves(f, (model_template, opt_state_template, 0))

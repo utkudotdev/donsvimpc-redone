@@ -11,7 +11,7 @@ from environments.dubins import get_environment_parameters
 from functools import partial
 import tqdm
 
-from networks.ncbf import NCBF, compute_ncbf_loss
+from networks.ncbf import NCBF, compute_ncbf_loss, load_checkpoint, save_checkpoint
 import optax
 import equinox as eqx
 
@@ -75,7 +75,9 @@ def split_data(
 
 
 @eqx.filter_jit
-def train(model, opt_state, optimizer, discount_factor, batch_size, x_t, h_t, x_t1, key):
+def train(
+    model, opt_state, optimizer, discount_factor, batch_size, x_t, h_t, x_t1, key
+):
     """Train for one epoch over shuffled batches. Returns (model, opt_state, cumulative_loss)."""
     n = x_t.shape[0]
     perm = jax.random.permutation(key, n)
@@ -113,17 +115,6 @@ def train(model, opt_state, optimizer, discount_factor, batch_size, x_t, h_t, x_
     )
     model = eqx.combine(dynamic_model, static_model)
     return model, opt_state, total_loss
-
-
-def save_checkpoint(path: Path, model: NCBF, opt_state, epoch: int):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "wb") as f:
-        eqx.tree_serialise_leaves(f, (model, opt_state, epoch))
-
-
-def load_checkpoint(path: Path, model_template: NCBF, opt_state_template):
-    with open(path, "rb") as f:
-        return eqx.tree_deserialise_leaves(f, (model_template, opt_state_template, 0))
 
 
 @eqx.filter_jit
@@ -326,7 +317,6 @@ def main():
     checkpoint_path = checkpoint_dir / "ncbf.eqx"
     print(f"Run directory: {run_dir}")
 
-
     rel_state_size = train_x_ts.shape[1]
 
     key, init_model_key = jax.random.split(key)
@@ -349,7 +339,6 @@ def main():
         )
         print(f"Resuming from epoch {start_epoch}")
 
-
     visualize_ncbf(
         model,
         params,
@@ -360,12 +349,23 @@ def main():
     for epoch in tqdm.trange(start_epoch, epochs, initial=start_epoch, total=epochs):
         key, epoch_key = jax.random.split(key)
         model, opt_state, train_loss = train(
-            model, opt_state, optimizer, discount_factor, batch_size,
-            train_x_ts, train_h_ts, train_x_t1s, epoch_key,
+            model,
+            opt_state,
+            optimizer,
+            discount_factor,
+            batch_size,
+            train_x_ts,
+            train_h_ts,
+            train_x_t1s,
+            epoch_key,
         )
         test_loss = evaluate(
-            model, discount_factor, batch_size,
-            test_x_ts, test_h_ts, test_x_t1s,
+            model,
+            discount_factor,
+            batch_size,
+            test_x_ts,
+            test_h_ts,
+            test_x_t1s,
         )
 
         visualize_ncbf(
