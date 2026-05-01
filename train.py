@@ -68,6 +68,79 @@ def dataloader(arrays, batch_size):
             
     return _impl
 
+def visualize_ncbf(ncbf: NCBF, params: Parameters, resolution: int = 100, save: bool = False):
+    """Visualise the trained NCBF over the workspace.
+
+    For every (x, y) grid cell the car is placed there facing +x with a small
+    forward velocity while obstacles sit at their start positions with zero
+    speed.  The NCBF is evaluated and the *max* of the output h-vector is
+    plotted as a heatmap.  Obstacle positions are overlaid as green circles.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Circle
+
+    from dynamics.dubins_dynamics import DubinsState
+    from dynamics.obstacle_dynamics import ObstacleState
+
+    x_min, x_max = float(params.x_min), float(params.x_max)
+    y_min, y_max = float(params.y_min), float(params.y_max)
+
+    xs = jnp.linspace(x_min, x_max, resolution)
+    ys = jnp.linspace(y_min, y_max, resolution)
+    xx, yy = jnp.meshgrid(xs, ys)  # each (resolution, resolution)
+
+    # Flatten grid to (resolution^2,)
+    flat_x = xx.ravel()
+    flat_y = yy.ravel()
+
+    num_obstacles = params.obstacle_params.start_point.shape[0]
+
+    # Build a batched State at every grid point.
+    # Obstacles: stationary at their start positions (alpha=0, forward=True).
+    obstacle_alpha = jnp.zeros((num_obstacles,))
+    obstacle_forward = jnp.ones((num_obstacles,), dtype=bool)
+
+    def _eval_single(x, y):
+        state = State(
+            dubins_state=DubinsState(x=x, y=y, v=jnp.array(0.1), theta=jnp.array(0.0)),
+            obstacle_state=ObstacleState(alpha=obstacle_alpha, forward=obstacle_forward),
+        )
+        rel = make_relative_state(state, params)
+        h_vec = ncbf(rel)
+        return jnp.max(h_vec)
+
+    max_h = jax.vmap(_eval_single)(flat_x, flat_y)
+    max_h_grid = max_h.reshape(resolution, resolution)
+
+    # ----- Plotting -----
+    fig, ax = plt.subplots(figsize=(8, 6))
+    im = ax.pcolormesh(
+        xs, ys, max_h_grid,
+        cmap="RdYlGn_r",
+        shading="auto",
+    )
+    fig.colorbar(im, ax=ax, label="max h (NCBF)")
+
+    # Draw obstacles at their start positions
+    for i in range(num_obstacles):
+        cx, cy = float(params.obstacle_params.start_point[i, 0]), float(params.obstacle_params.start_point[i, 1])
+        r = float(params.obstacle_params.radius[i])
+        circle = Circle((cx, cy), r, linewidth=2, edgecolor="green", facecolor="green", alpha=0.35)
+        ax.add_patch(circle)
+
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_title("NCBF max h(x, y)  — obstacles in green")
+    ax.set_aspect("equal", adjustable="box")
+    plt.tight_layout()
+
+    if save:
+        plt.savefig("ncbf_heatmap.png", dpi=200)
+        print("Saved ncbf_heatmap.png")
+    plt.show()
+
 def main():
     data = jnp.load(sys.argv[1], allow_pickle=True)
     states: State = data['states'].item()
@@ -105,11 +178,17 @@ def main():
     (train_x_ts, train_h_ts, train_x_t1s), (test_x_ts, test_h_ts, test_h_t1s) = prepare_dset(train_percent, split_data_key)
     #NOTE: add checkpointing and loading from a checkpoint
     
-    epochs = 2
+    # TODO:
+    #   - evaluate on held-out set of states
+    #   - add checkpointing and loading from a checkpoint
+    #   - save plots of V_h (instead of displaying them during training)
+
+    epochs = 10
     batch_size = 128
     discount_factor = 0.99
 
     train_dataloader = dataloader([train_x_ts, train_h_ts, train_x_t1s], batch_size)
+    test_dataloader = dataloader([test_x_ts, test_h_ts, test_h_t1s], batch_size)
 
     rel_state_size = train_x_ts.shape[2]
     
@@ -140,6 +219,8 @@ def main():
         model = eqx.apply_updates(model, updates)
         return model, opt_state, loss
     
+
+    visualize_ncbf(model, params)
     
     for epoch in range(epochs):
         epoch_loss = 0.0
@@ -150,7 +231,9 @@ def main():
 
             num_batches += 1
             epoch_loss += loss.item()
-        
+
+        visualize_ncbf(model, params)
+
         print(f"Epoch {epoch + 1} | Epoch Loss: {epoch_loss:.4f}")
 
 if __name__ == '__main__':
