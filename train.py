@@ -7,7 +7,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 from environments.dubins import get_environment_parameters
-import numpy as np
+
 from functools import partial
 import tqdm
 
@@ -74,24 +74,45 @@ def split_data(
     )
 
 
-def dataloader(arrays, batch_size):
-    dataset_size = arrays[0].shape[0]
-    assert all(array.shape[0] == dataset_size for array in arrays)
-    indices = np.arange(dataset_size)
+@eqx.filter_jit
+def train(model, opt_state, optimizer, discount_factor, batch_size, x_t, h_t, x_t1, key):
+    """Train for one epoch over shuffled batches. Returns (model, opt_state, cumulative_loss)."""
+    n = x_t.shape[0]
+    perm = jax.random.permutation(key, n)
+    x_t, h_t, x_t1 = x_t[perm], h_t[perm], x_t1[perm]
 
-    batch_count = (dataset_size + batch_size - 1) // batch_size
+    num_batches = n // batch_size
+    trim = num_batches * batch_size
+    x_t = x_t[:trim].reshape(num_batches, batch_size, -1)
+    h_t = h_t[:trim].reshape(num_batches, batch_size, -1)
+    x_t1 = x_t1[:trim].reshape(num_batches, batch_size, -1)
 
-    def _impl():
-        perm = np.random.permutation(indices)
-        start = 0
-        end = batch_size
-        while end <= dataset_size:
-            batch_perm = perm[start:end]
-            yield tuple(array[batch_perm] for array in arrays)
-            start = end
-            end = start + batch_size
+    # Partition model: only arrays go into the scan carry; static parts
+    # (e.g. jax.nn.relu) are captured in the closure.
+    dynamic_model, static_model = eqx.partition(model, eqx.is_array)
 
-    return _impl, batch_count
+    def step(carry, batch):
+        dynamic_model, opt_state, total_loss = carry
+        model = eqx.combine(dynamic_model, static_model)
+        x_b, h_b, x_b1 = batch
+
+        def mean_loss(model):
+            per_sample = jax.vmap(compute_ncbf_loss, in_axes=(None, None, 0, 0, 0))(
+                model, discount_factor, x_b, h_b, x_b1
+            )
+            return jnp.mean(per_sample)
+
+        loss, grads = eqx.filter_value_and_grad(mean_loss)(model)
+        updates, opt_state = optimizer.update(grads, opt_state, model)
+        model = eqx.apply_updates(model, updates)
+        dynamic_model, _ = eqx.partition(model, eqx.is_array)
+        return (dynamic_model, opt_state, total_loss + loss), None
+
+    (dynamic_model, opt_state, total_loss), _ = jax.lax.scan(
+        step, (dynamic_model, opt_state, jnp.array(0.0)), (x_t, h_t, x_t1)
+    )
+    model = eqx.combine(dynamic_model, static_model)
+    return model, opt_state, total_loss
 
 
 def save_checkpoint(path: Path, model: NCBF, opt_state, epoch: int):
@@ -105,21 +126,25 @@ def load_checkpoint(path: Path, model_template: NCBF, opt_state_template):
         return eqx.tree_deserialise_leaves(f, (model_template, opt_state_template, 0))
 
 
-def evaluate(model: NCBF, discount_factor: float, dataloader_fn):
-    @eqx.filter_jit
-    def batch_loss(model, x_t_batch, h_t_batch, x_t1_batch):
-        per_sample = jax.vmap(compute_ncbf_loss, in_axes=(None, None, 0, 0, 0))(
-            model, discount_factor, x_t_batch, h_t_batch, x_t1_batch
-        )
-        return jnp.mean(per_sample, axis=0)
+@eqx.filter_jit
+def evaluate(model, discount_factor, batch_size, x_t, h_t, x_t1):
+    """Evaluate over the full dataset. Returns cumulative loss."""
+    n = x_t.shape[0]
+    num_batches = n // batch_size
+    trim = num_batches * batch_size
+    x_t = x_t[:trim].reshape(num_batches, batch_size, -1)
+    h_t = h_t[:trim].reshape(num_batches, batch_size, -1)
+    x_t1 = x_t1[:trim].reshape(num_batches, batch_size, -1)
 
-    total = 0.0
-    seen = 0
-    for x_t_batch, h_t_batch, x_t1_batch in dataloader_fn():
-        loss = batch_loss(model, x_t_batch, h_t_batch, x_t1_batch)
-        total += float(loss) * x_t_batch.shape[0]
-        seen += x_t_batch.shape[0]
-    return total / max(seen, 1)
+    def step(total_loss, batch):
+        x_b, h_b, x_b1 = batch
+        per_sample = jax.vmap(compute_ncbf_loss, in_axes=(None, None, 0, 0, 0))(
+            model, discount_factor, x_b, h_b, x_b1
+        )
+        return total_loss + jnp.mean(per_sample), None
+
+    total_loss, _ = jax.lax.scan(step, jnp.array(0.0), (x_t, h_t, x_t1))
+    return total_loss
 
 
 @eqx.filter_jit
@@ -292,7 +317,7 @@ def main():
     )
 
     epochs = 10
-    batch_size = 128
+    batch_size = 1024
     discount_factor = 0.92
 
     run_dir = Path("runs") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -301,12 +326,6 @@ def main():
     checkpoint_path = checkpoint_dir / "ncbf.eqx"
     print(f"Run directory: {run_dir}")
 
-    train_dataloader, train_batch_count = dataloader(
-        [train_x_ts, train_h_ts, train_x_t1s], batch_size
-    )
-    test_dataloader, test_batch_count = dataloader(
-        [test_x_ts, test_h_ts, test_x_t1s], batch_size
-    )
 
     rel_state_size = train_x_ts.shape[1]
 
@@ -330,21 +349,6 @@ def main():
         )
         print(f"Resuming from epoch {start_epoch}")
 
-    def train_step(model, opt_state, x_t_batch, h_t_batch, x_t1_batch):
-        def compute_mean_loss(model, discount_factor, x_t_batch, h_t_batch, x_t1_batch):
-            batch_loss_fn = jax.vmap(compute_ncbf_loss, in_axes=(None, None, 0, 0, 0))
-            batch_loss = batch_loss_fn(
-                model, discount_factor, x_t_batch, h_t_batch, x_t1_batch
-            )
-            return jnp.mean(batch_loss, axis=0)
-
-        loss, grads = eqx.filter_value_and_grad(compute_mean_loss)(
-            model, discount_factor, x_t_batch, h_t_batch, x_t1_batch
-        )
-
-        updates, opt_state = optimizer.update(grads, opt_state, model)
-        model = eqx.apply_updates(model, updates)
-        return model, opt_state, loss
 
     visualize_ncbf(
         model,
@@ -354,18 +358,15 @@ def main():
     )
 
     for epoch in tqdm.trange(start_epoch, epochs, initial=start_epoch, total=epochs):
-        epoch_loss = 0.0
-
-        for x_t_batch, h_t_batch, x_t1_batch in tqdm.tqdm(
-            train_dataloader(), total=train_batch_count, leave=False
-        ):
-            model, opt_state, loss = eqx.filter_jit(train_step)(
-                model, opt_state, x_t_batch, h_t_batch, x_t1_batch
-            )
-            epoch_loss += loss.item()
-
-        train_loss = epoch_loss / max(train_batch_count, 1)
-        test_loss = evaluate(model, discount_factor, test_dataloader)
+        key, epoch_key = jax.random.split(key)
+        model, opt_state, train_loss = train(
+            model, opt_state, optimizer, discount_factor, batch_size,
+            train_x_ts, train_h_ts, train_x_t1s, epoch_key,
+        )
+        test_loss = evaluate(
+            model, discount_factor, batch_size,
+            test_x_ts, test_h_ts, test_x_t1s,
+        )
 
         visualize_ncbf(
             model,
@@ -377,7 +378,7 @@ def main():
         save_checkpoint(checkpoint_path, model, opt_state, epoch + 1)
 
         tqdm.tqdm.write(
-            f"Epoch {epoch + 1} | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}"
+            f"Epoch {epoch + 1} | Train Loss: {float(train_loss):.4f} | Test Loss: {float(test_loss):.4f}"
         )
 
 
