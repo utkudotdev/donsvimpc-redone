@@ -26,6 +26,10 @@ class DubinsState:
     v: jnp.ndarray
     theta: jnp.ndarray
 
+    def position(self) -> jnp.ndarray:
+        return jnp.array([self.x, self.y])
+
+
 @partial(jax.jit, static_argnames=("num_substeps",))
 def step_dubins(
     state: DubinsState,

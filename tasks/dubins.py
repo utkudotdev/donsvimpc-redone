@@ -42,7 +42,7 @@ def compute_h_vector(s: State, p: Parameters):
         s.dubins_state.y - p.y_max, 
         p.y_min - s.dubins_state.y]))
 
-    dubins_position = jnp.array([ s.dubins_state.x, s.dubins_state.y ])
+    dubins_position = s.dubins_state.position()
     obstacle_positions = jax.vmap(ObstacleState.position)(s.obstacle_state, p.obstacle_params)
 
     signed_distances = jnp.linalg.norm(dubins_position - obstacle_positions, axis=1) - p.obstacle_params.radius
