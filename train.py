@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import argparse
 from datetime import datetime
 from pathlib import Path
-from environments.dubins import ENVIRONMENTS, get_environment_parameters
+from environments.dubins import ENVIRONMENTS
 from environments.discovery import discover_env_name
 
 from functools import partial
@@ -245,13 +245,6 @@ def parse_args():
     )
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument(
-        "--env",
-        type=str,
-        default=None,
-        choices=sorted(ENVIRONMENTS.keys()),
-        help="Environment name. Defaults to the env from the dataset's sibling metadata.json, or 'basic' if missing.",
-    )
-    parser.add_argument(
         "--hidden-size",
         type=int,
         default=256,
@@ -266,10 +259,7 @@ def main():
     data = jnp.load(args.dataset / "dset.npz", allow_pickle=True)
     states: State = data["states"].item()
     hs: jnp.ndarray = data["hs"]
-
-    env_name = args.env if args.env is not None else discover_env_name(args.dataset)
-    args.env = env_name
-    params = get_environment_parameters(env_name)
+    params: Parameters = data["params"].item()
 
     num_trajs, traj_length = states.dubins_state.x.shape
     h_vec_shape = hs.shape[2]
@@ -278,7 +268,7 @@ def main():
     def prepare_dset(train_percent: float, key: jnp.ndarray):
         # input shape: (num_trajs, traj length, state obj ). output shape: (num trajs, traj length, relative state size)
         relative_states = jax.vmap(
-            jax.vmap(make_dubins_features, in_axes=(0, None)), in_axes=(0, None)
+            jax.vmap(make_dubins_features, in_axes=(0, None)), in_axes=(0, 0)
         )(states, params)
         assert relative_states.ndim == 3
         assert relative_states.shape[:2] == (num_trajs, traj_length)
@@ -345,9 +335,10 @@ def main():
         optimizer = optax.adamw(**optimizer_params)
         opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
 
+    first_params = jax.tree.map(lambda x: x[0], params)
     visualize_ncbf(
         model,
-        params,
+        first_params,
         save_path=str(plots_dir / f"ncbf_epoch_{start_epoch:03d}.png"),
         show=False,
     )
@@ -376,7 +367,7 @@ def main():
 
         visualize_ncbf(
             model,
-            params,
+            first_params,
             save_path=str(plots_dir / f"ncbf_epoch_{epoch + 1:03d}.png"),
             show=False,
         )

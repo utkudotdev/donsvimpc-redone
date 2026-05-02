@@ -24,19 +24,16 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-from environments.dubins import ENVIRONMENTS, get_environment_parameters
-from environments.discovery import discover_env_name
-
 
 BOUNDARY_VIS_MARGIN = 1.0
 
 
 def load_data(path: str):
-    """Load the .npz and return flat x, y, v, theta arrays and hs."""
+    """Load the .npz and return flat x, y, v, theta, hs arrays plus per-rollout params."""
     data = jnp.load(path, allow_pickle=True)
-    # print(list(data.keys()))
     states = data["states"].item()
     hs = data["hs"]
+    params = data["params"].item()
 
     xs = states.dubins_state.x.ravel()  # flatten across rollouts & timesteps
     ys = states.dubins_state.y.ravel()
@@ -44,10 +41,9 @@ def load_data(path: str):
     thetas = states.dubins_state.theta.ravel()
 
     # hs shape: (num_rollouts, rollout_length, h_dim) → take max across h_dim
-    hs_raw = hs
-    hs_max = hs_raw.max(axis=-1).ravel()  # max over the h components
+    hs_max = hs.max(axis=-1).ravel()
 
-    return xs, ys, vs, thetas, hs_max
+    return xs, ys, vs, thetas, hs_max, params
 
 
 def plot_heatmaps(xs, ys, hs, x_min, x_max, y_min, y_max, resolution, save=False):
@@ -184,25 +180,16 @@ def main():
     parser.add_argument(
         "--save", action="store_true", help="Save the plot to heatmap.png"
     )
-    parser.add_argument(
-        "--env",
-        type=str,
-        default=None,
-        choices=sorted(ENVIRONMENTS.keys()),
-        help="Environment name. Defaults to the env from the dataset's sibling metadata.json, or 'basic' if missing.",
-    )
     args = parser.parse_args()
 
     npz_path = args.dataset / "dset.npz"
 
-    env_name = args.env if args.env is not None else discover_env_name(args.dataset)
-    params = get_environment_parameters(env_name)
-    x_min = float(params.x_min) - BOUNDARY_VIS_MARGIN
-    x_max = float(params.x_max) + BOUNDARY_VIS_MARGIN
-    y_min = float(params.y_min) - BOUNDARY_VIS_MARGIN
-    y_max = float(params.y_max) + BOUNDARY_VIS_MARGIN
+    xs, ys, vs, thetas, hs, params = load_data(npz_path)
 
-    xs, ys, vs, thetas, hs = load_data(npz_path)
+    x_min = float(jnp.min(params.x_min)) - BOUNDARY_VIS_MARGIN
+    x_max = float(jnp.max(params.x_max)) + BOUNDARY_VIS_MARGIN
+    y_min = float(jnp.min(params.y_min)) - BOUNDARY_VIS_MARGIN
+    y_max = float(jnp.max(params.y_max)) + BOUNDARY_VIS_MARGIN
 
     print(f"Loaded {len(xs):,} data points from {npz_path}")
     print(f"Space bounds: x ∈ [{x_min}, {x_max}], y ∈ [{y_min}, {y_max}]")

@@ -20,7 +20,10 @@ from dynamics.dubins_dynamics import DubinsState
 
 from safety import cbf
 from tasks.dubins import compute_h_vector, make_goal_reaching_task
-from environments.dubins import ENVIRONMENTS, get_environment_parameters
+from environments.dubins import (
+    ENVIRONMENTS,
+    make_environment,
+)
 from environments.discovery import discover_env_name
 
 from networks.ncbf import load_checkpoint, NCBF, NCBFNetwork
@@ -44,6 +47,7 @@ def get_arguments():
         choices=sorted(ENVIRONMENTS.keys()),
         help="Environment name. Defaults to the env from the NCBF checkpoint metadata, or 'basic' if no checkpoint is given.",
     )
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
 
     return parser.parse_args()
 
@@ -257,14 +261,17 @@ def main():
     ncbf_path: Path | None = args.ncbf
     use_ncbf = ncbf_path is not None
 
+    key = jax.random.key(seed=args.seed)
+    env_key, mppi_key = jax.random.split(key)
+
     env_name = args.env if args.env is not None else discover_env_name(ncbf_path)
-    params: Parameters = get_environment_parameters(env_name)
+    params: Parameters = make_environment(env_name, key=env_key)
 
     dubins_state = DubinsState(
         x=jnp.array(1.0),
         y=jnp.array(1.0),
         v=jnp.array(0.0),
-        theta=jnp.array(0.0),
+        theta=jnp.array(jnp.pi / 2),
     )
 
     num_obstacles = params.obstacle_params.radius.shape[0]
@@ -282,11 +289,12 @@ def main():
     variances = [2.0, 2.0]
 
     mppi_state, mppi_params, mppi_dynamic_params = make_mppi_controller(
-        horizon, num_rollouts, temp, variances, jax.random.key(seed=0)
+        horizon, num_rollouts, temp, variances, mppi_key
     )
 
     # goal = jnp.array([7.0, 3.5, 0.0])
-    goal = jnp.array([7.0, 1.0, 0.0])
+    # goal = jnp.array([7.0, 1.0, 0.0])
+    goal = jnp.array([1.0, 7.0, 0.0])
     task_cost_fn, task_terminal_cost_fn, _task_done_fn = make_goal_reaching_task(goal)
 
     collision_checker = compute_h_vector

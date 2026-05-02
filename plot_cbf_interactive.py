@@ -17,6 +17,7 @@ Usage:
 
 import argparse
 from pathlib import Path
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -37,7 +38,7 @@ CMAP = "RdBu_r"
 from dynamics.environment_dynamics import State
 from dynamics.dubins_dynamics import DubinsState
 from dynamics.obstacle_dynamics import ObstacleState
-from environments.dubins import get_environment_parameters
+from environments.dubins import make_environment
 from environments.discovery import discover_env_name
 from networks.ncbf import NCBF, NCBFNetwork, load_checkpoint
 from tasks.dubins import compute_h_vector
@@ -62,6 +63,7 @@ def get_arguments():
     parser.add_argument(
         "--resolution", type=int, default=100, help="Grid bins per axis (default: 100)"
     )
+    parser.add_argument("--seed", type=int, default=0, help="Random seed")
     return parser.parse_args()
 
 
@@ -69,7 +71,7 @@ def main():
     args = get_arguments()
 
     env_name = args.env if args.env is not None else discover_env_name(args.ncbf)
-    params = get_environment_parameters(env_name)
+    params = make_environment(env_name, key=jax.random.key(args.seed))
 
     h_fn = compute_h_vector
 
@@ -106,7 +108,7 @@ def main():
     def network_only(s: State, p):
         return ncbf_network(make_dubins_features(s, p))
 
-    grid_fns: dict[str, callable] = {"h": make_grid_fn(h_fn)}
+    grid_fns: dict[str, Callable] = {"h": make_grid_fn(h_fn)}
     if use_ncbf:
         grid_fns["max(h, V)"] = make_grid_fn(ncbf_combined)
         grid_fns["V"] = make_grid_fn(network_only)

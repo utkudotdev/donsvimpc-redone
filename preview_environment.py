@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.animation import FuncAnimation
 
 from dynamics.obstacle_dynamics import ObstacleState, step_obstacle
-from environments.dubins import ENVIRONMENTS, get_environment_parameters
+from environments.dubins import ENVIRONMENTS, make_environment
 
 
 def get_arguments():
@@ -42,7 +42,7 @@ def rollout_obstacles(
 
 def main():
     args = get_arguments()
-    params = get_environment_parameters(args.env)
+    params = make_environment(args.env, key=jax.random.key(0))
     obstacle_params = params.obstacle_params
 
     num_obstacles = obstacle_params.radius.shape[0]
@@ -51,7 +51,9 @@ def main():
         forward=jnp.ones(num_obstacles, dtype=bool),
     )
 
-    states = rollout_obstacles(initial_obs_state, obstacle_params, args.dt, args.num_steps)
+    states = rollout_obstacles(
+        initial_obs_state, obstacle_params, args.dt, args.num_steps
+    )
 
     positions = jax.vmap(jax.vmap(ObstacleState.position), in_axes=(0, None))(
         states, obstacle_params

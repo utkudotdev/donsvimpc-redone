@@ -16,7 +16,7 @@ import jax
 import jax.numpy as jnp
 from tasks.dubins import make_goal_reaching_task, compute_h_vector
 from safety import cbf
-from environments.dubins import ENVIRONMENTS, get_environment_parameters
+from environments.dubins import ENVIRONMENTS, make_environment
 
 
 NUM_ROLLOUTS = 40000
@@ -149,13 +149,16 @@ def main():
     args = get_arguments()
 
     key = jax.random.key(seed=0)
-    parameters = get_environment_parameters(args.env)
 
     rollout_keys = jax.random.split(key, NUM_ROLLOUTS)
 
     def _inner(key: jnp.ndarray):
-        start_key, goal_key = jax.random.split(key)
+        start_key, goal_key, env_key = jax.random.split(key, 3)
+
+        parameters = make_environment(args.env, key=env_key)
+
         start_state = sample_start_state(start_key, parameters)
+
         goal = jax.random.uniform(
             goal_key,
             shape=(3,),
@@ -195,15 +198,17 @@ def main():
             MPPI_VARIANCE,
         )
 
-        return (states, hs)
+        return (states, hs, parameters)
 
-    states, hs = jax.lax.map(_inner, rollout_keys, batch_size=NUM_ROLLOUTS_PER_BATCH)
+    states, hs, params = jax.lax.map(
+        _inner, rollout_keys, batch_size=NUM_ROLLOUTS_PER_BATCH
+    )
 
     out_dir = Path("data") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"Saving dataset to {out_dir}")
 
-    jnp.savez(out_dir / "dset.npz", states=states, hs=hs)
+    jnp.savez(out_dir / "dset.npz", states=states, hs=hs, params=params)
 
     metadata = {
         "env": args.env,
