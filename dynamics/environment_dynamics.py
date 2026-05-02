@@ -55,39 +55,5 @@ def step_state(
     return State(
         # quadrotor_state,
         dubins_state,
-        obstacle_state)
-
-
-def make_relative_dubins_state(s: State, p: Parameters) -> jnp.ndarray:
-    """
-    Input to neural-CBF contains the state. To make the neural-CBF more
-    general, we pass in a 'relative state'.
-
-    """
-    obstacle_relative_pos = (
-        jax.vmap(ObstacleState.position)(s.obstacle_state, p.obstacle_params)
-        - s.dubins_state.position()
-    )
-    boundary_max_relative_pos = (
-        jnp.array([p.x_max, p.y_max]) - s.dubins_state.position()
-    )
-    boundary_min_relative_pos = s.dubins_state.position() - jnp.array(
-        [p.x_min, p.y_min]
-    )
-
-    obstacle_abs_vel = jax.vmap(ObstacleState.velocity)(
-        s.obstacle_state, p.obstacle_params
-    )
-
-    # TODO: if we randomize car dynamics we would have to include that here
-    # Right now, dynamics and velocity constraints are baked into NCBF
-    return jnp.concatenate(
-        [
-            obstacle_relative_pos.flatten(),
-            boundary_max_relative_pos,
-            boundary_min_relative_pos,
-            jnp.atleast_1d(s.dubins_state.v),
-            jnp.atleast_1d(s.dubins_state.theta),
-            obstacle_abs_vel.flatten(),
-        ]
+        obstacle_state,
     )

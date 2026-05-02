@@ -1,4 +1,4 @@
-from dynamics.environment_dynamics import State, Parameters, make_relative_dubins_state
+from dynamics.environment_dynamics import State, Parameters
 from dynamics.obstacle_dynamics import ObstacleState
 from dynamics.dubins_dynamics import DubinsState
 import jax
@@ -11,7 +11,13 @@ from environments.dubins import get_environment_parameters
 from functools import partial
 import tqdm
 
-from networks.ncbf import NCBFNetwork, compute_ncbf_loss, load_checkpoint, save_checkpoint
+from networks.feature import make_dubins_features
+from networks.ncbf import (
+    NCBFNetwork,
+    compute_ncbf_loss,
+    load_checkpoint,
+    save_checkpoint,
+)
 import optax
 import equinox as eqx
 
@@ -79,7 +85,7 @@ def train(
         step, (dynamic_model, opt_state, jnp.array(0.0)), (x_t, h_t, x_t1)
     )
     model = eqx.combine(dynamic_model, static_model)
-    return model, opt_state, total_loss
+    return model, opt_state, total_loss / num_batches
 
 
 @eqx.filter_jit
@@ -100,7 +106,7 @@ def evaluate(model, discount_factor, batch_size, x_t, h_t, x_t1):
         return total_loss + jnp.mean(per_sample), None
 
     total_loss, _ = jax.lax.scan(step, jnp.array(0.0), (x_t, h_t, x_t1))
-    return total_loss
+    return total_loss / num_batches
 
 
 @eqx.filter_jit
@@ -118,7 +124,7 @@ def eval_ncbf_grid(
                 alpha=obstacle_alpha, forward=obstacle_forward
             ),
         )
-        rel = make_relative_dubins_state(state, params)
+        rel = make_dubins_features(state, params)
         return jnp.max(ncbf(rel))
 
     return jax.vmap(_eval_single)(flat_x, flat_y)
@@ -223,7 +229,7 @@ def parse_args():
         "--epochs",
         type=int,
         default=10,
-        help="Number of epochs to train (or continue training) for."
+        help="Number of epochs to train (or continue training) for.",
     )
     parser.add_argument(
         "--batch-size",
@@ -234,18 +240,14 @@ def parse_args():
         "--discount-factor",
         type=float,
         default=0.92,
-        help="Discount factor for value function."
+        help="Discount factor for value function.",
     )
-    parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=3e-4
-    )
+    parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument(
         "--hidden-size",
         type=int,
         default=256,
-        help="Hidden size for NCBF architecture."
+        help="Hidden size for NCBF architecture.",
     )
     return parser.parse_args()
 
@@ -266,7 +268,7 @@ def main():
     def prepare_dset(train_percent: float, key: jnp.ndarray):
         # input shape: (num_trajs, traj length, state obj ). output shape: (num trajs, traj length, relative state size)
         relative_states = jax.vmap(
-            jax.vmap(make_relative_dubins_state, in_axes=(0, None)), in_axes=(0, None)
+            jax.vmap(make_dubins_features, in_axes=(0, None)), in_axes=(0, None)
         )(states, params)
         assert relative_states.ndim == 3
         assert relative_states.shape[:2] == (num_trajs, traj_length)
@@ -315,7 +317,9 @@ def main():
 
     if args.checkpoint is not None:
         print(f"Loading checkpoint from {args.checkpoint}")
-        model, optimizer, opt_state, start_epoch = load_checkpoint(args.checkpoint)
+        model, optimizer, opt_state, optimizer_params, start_epoch = load_checkpoint(
+            args.checkpoint
+        )
         print(f"Resuming from epoch {start_epoch}")
     else:
         model = NCBFNetwork(
@@ -327,9 +331,9 @@ def main():
 
         start_epoch = 0
 
-        optimizer_params = { "learning_rate" : args.learning_rate }
+        optimizer_params = {"learning_rate": args.learning_rate}
         optimizer = optax.adamw(**optimizer_params)
-        opt_state = optimizer.init(eqx.filter(model, eqx.is_array))       
+        opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
 
     visualize_ncbf(
         model,
@@ -368,13 +372,13 @@ def main():
         )
 
         save_checkpoint(
-            checkpoint_dir, 
+            checkpoint_dir,
             model,
-            epoch + 1, 
-            opt_state, 
-            optax.adamw.__name__, 
-            optimizer_params, 
-            vars(args)
+            epoch + 1,
+            opt_state,
+            optax.adamw.__name__,
+            optimizer_params,
+            vars(args),
         )
 
         tqdm.tqdm.write(
