@@ -26,7 +26,7 @@ from environments.dubins import get_environment_parameters
 
 
 def load_data(path: str):
-    """Load the .npz and return flat x, y arrays and hs."""
+    """Load the .npz and return flat x, y, v, theta arrays and hs."""
     data = jnp.load(path, allow_pickle=True)
     # print(list(data.keys()))
     states = data['states'].item()
@@ -34,12 +34,14 @@ def load_data(path: str):
 
     xs = states.dubins_state.x.ravel()       # flatten across rollouts & timesteps
     ys = states.dubins_state.y.ravel()
+    vs = states.dubins_state.v.ravel()
+    thetas = states.dubins_state.theta.ravel()
 
     # hs shape: (num_rollouts, rollout_length, h_dim) → take max across h_dim
     hs_raw = hs
     hs_max = hs_raw.max(axis=-1).ravel()  # max over the h components
 
-    return xs, ys, hs_max
+    return xs, ys, vs, thetas, hs_max
 
 
 def plot_heatmaps(xs, ys, hs, x_min, x_max, y_min, y_max, resolution, save=False):
@@ -96,6 +98,50 @@ def plot_heatmaps(xs, ys, hs, x_min, x_max, y_min, y_max, resolution, save=False
     plt.show()
 
 
+def plot_distributions(vs, thetas, save=False):
+    """Plot histograms of velocity and theta distributions."""
+    fig, axes = plt.subplots(1, 3, figsize=(20, 5))
+
+    vs_np = np.asarray(vs)
+
+    # -- Velocity distribution (full) --
+    ax = axes[0]
+    ax.hist(vs_np, bins=80, color="#2196F3", edgecolor="black", alpha=0.85)
+    ax.set_xlabel("Velocity (v)")
+    ax.set_ylabel("Count")
+    ax.set_title("Velocity Distribution (full)")
+    ax.axvline(float(np.mean(vs_np)), color="red", linestyle="--", linewidth=1.5, label=f"mean = {float(np.mean(vs_np)):.3f}")
+    ax.legend()
+
+    # -- Velocity distribution (zoomed, outliers removed) --
+    percentiles = [ 25, 75 ]
+    p_lo, p_hi = np.percentile(vs_np, percentiles)
+    vs_core = vs_np[(vs_np >= p_lo) & (vs_np <= p_hi)]
+    ax = axes[1]
+    ax.hist(vs_core, bins=80, color="#2196F3", edgecolor="black", alpha=0.85)
+    ax.set_xlabel("Velocity (v)")
+    ax.set_ylabel("Count")
+    ax.set_title(f"Velocity Distribution ({percentiles[0]}-{percentiles[1]} pctl)")
+    ax.axvline(float(np.mean(vs_core)), color="red", linestyle="--", linewidth=1.5, label=f"mean = {float(np.mean(vs_core)):.3f}")
+    ax.legend()
+
+    # -- Theta distribution --
+    thetas = (thetas + np.pi) % (2 * np.pi) - np.pi
+    ax = axes[2]
+    ax.hist(np.asarray(thetas), bins=80, color="#FF9800", edgecolor="black", alpha=0.85)
+    ax.set_xlabel("Theta (rad)")
+    ax.set_ylabel("Count")
+    ax.set_title("Theta Distribution")
+    ax.axvline(float(np.mean(thetas)), color="red", linestyle="--", linewidth=1.5, label=f"mean = {float(np.mean(thetas)):.3f}")
+    ax.legend()
+
+    plt.tight_layout()
+    if save:
+        plt.savefig("distributions.png", dpi=200)
+        print("Saved distributions.png")
+    plt.show()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Plot state-visitation heatmap from rollout .npz")
     parser.add_argument("npz_path", type=str, help="Path to the .npz file")
@@ -112,13 +158,16 @@ def main():
     y_min = float(params.y_min)
     y_max = float(params.y_max)
 
-    xs, ys, hs = load_data(args.npz_path)
+    xs, ys, vs, thetas, hs = load_data(args.npz_path)
 
     print(f"Loaded {len(xs):,} data points from {args.npz_path}")
     print(f"Space bounds: x ∈ [{x_min}, {x_max}], y ∈ [{y_min}, {y_max}]")
     print(f"Grid resolution: {args.resolution} × {args.resolution}")
+    print(f"Velocity range: [{float(vs.min()):.3f}, {float(vs.max()):.3f}]")
+    print(f"Theta range:    [{float(thetas.min()):.3f}, {float(thetas.max()):.3f}]")
 
     plot_heatmaps(xs, ys, hs, x_min, x_max, y_min, y_max, args.resolution, save=args.save)
+    plot_distributions(vs, thetas, save=args.save)
 
 
 if __name__ == "__main__":
