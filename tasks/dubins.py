@@ -56,10 +56,8 @@ def compute_h_vector(s: State, p: Parameters):
         jnp.linalg.norm(dubins_position - obstacle_positions, axis=1)
         - p.obstacle_params.radius
     )
-    # signed_distance = jnp.min(signed_distances)
+    signed_distance = jnp.min(signed_distances)
 
-    # h_obstacles = -signed_distance
-    h_obstacles = -signed_distances
+    h_obstacles = -signed_distance
 
-    return jnp.concatenate([h_obstacles, jnp.atleast_1d(h_boundary)])
-
+    return jnp.array([h_obstacles, h_boundary])

@@ -38,7 +38,51 @@ ENVIRONMENTS: dict[str, Parameters] = {
         x_max=jnp.array(8.0),
         y_min=jnp.array(2.25),
         y_max=jnp.array(4.0),
-    )
+    ),
+    "single_obstacle_narrow": Parameters(
+        dubins_params=DubinsParameters(
+            turn_rate_min=jnp.array(-1.0),
+            turn_rate_max=jnp.array(1.0),
+            velocity_min=jnp.array(-1.0),
+            velocity_max=jnp.array(1.0),
+            acceleration_min=jnp.array(-2.0),
+            acceleration_max=jnp.array(2.0),
+        ),
+        obstacle_params=from_many(
+            ObstacleParameters(
+                radius=jnp.array(0.75),
+                speed=jnp.array(0.0),
+                start_point=jnp.array([4.0, 1.0]),
+                end_point=jnp.array([0.0, 0.0]),
+            ),
+        ),
+        x_min=jnp.array(0.0),
+        x_max=jnp.array(8.0),
+        y_min=jnp.array(0.0),
+        y_max=jnp.array(2.0),
+    ),
+    "single_obstacle_narrow_moving": Parameters(
+        dubins_params=DubinsParameters(
+            turn_rate_min=jnp.array(-1.0),
+            turn_rate_max=jnp.array(1.0),
+            velocity_min=jnp.array(-1.0),
+            velocity_max=jnp.array(1.0),
+            acceleration_min=jnp.array(-2.0),
+            acceleration_max=jnp.array(2.0),
+        ),
+        obstacle_params=from_many(
+            ObstacleParameters(
+                radius=jnp.array(0.75),
+                speed=jnp.array(0.7),
+                start_point=jnp.array([7.0, 1.0]),
+                end_point=jnp.array([1.0, 1.0]),
+            ),
+        ),
+        x_min=jnp.array(0.0),
+        x_max=jnp.array(8.0),
+        y_min=jnp.array(0.0),
+        y_max=jnp.array(2.0),
+    ),
 }
 
 

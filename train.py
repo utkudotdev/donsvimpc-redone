@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import argparse
 from datetime import datetime
 from pathlib import Path
-from environments.dubins import get_environment_parameters
+from environments.dubins import ENVIRONMENTS, get_environment_parameters
 
 from functools import partial
 import tqdm
@@ -244,6 +244,13 @@ def parse_args():
     )
     parser.add_argument("--learning-rate", type=float, default=3e-4)
     parser.add_argument(
+        "--env",
+        type=str,
+        default="basic",
+        choices=sorted(ENVIRONMENTS.keys()),
+        help="Environment name from environments/dubins.py.",
+    )
+    parser.add_argument(
         "--hidden-size",
         type=int,
         default=256,
@@ -259,7 +266,7 @@ def main():
     states: State = data["states"].item()
     hs: jnp.ndarray = data["hs"]
 
-    params = get_environment_parameters("basic")
+    params = get_environment_parameters(args.env)
 
     num_trajs, traj_length = states.dubins_state.x.shape
     h_vec_shape = hs.shape[2]

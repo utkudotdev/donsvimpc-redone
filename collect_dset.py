@@ -1,3 +1,5 @@
+import argparse
+
 from dynamics.obstacle_dynamics import ObstacleState, from_many
 from dynamics.environment_dynamics import State, Parameters, step_state
 from dynamics.dubins_dynamics import DubinsState
@@ -11,7 +13,7 @@ import jax
 import jax.numpy as jnp
 from tasks.dubins import make_goal_reaching_task, compute_h_vector
 from safety import cbf
-from environments.dubins import get_environment_parameters
+from environments.dubins import ENVIRONMENTS, get_environment_parameters
 
 
 NUM_ROLLOUTS = 40000
@@ -19,8 +21,8 @@ NUM_ROLLOUTS_PER_BATCH = 4096
 MAX_ROLLOUT_LENGTH = 64
 DT = 0.05
 
-MPPI_HORIZON = 20
-MPPI_NUM_ROLLOUTS = 128
+MPPI_HORIZON = 8
+MPPI_NUM_ROLLOUTS = 256
 MPPI_TEMP = 1.0
 MPPI_VARIANCE = [1.0, 1.0]
 
@@ -125,9 +127,23 @@ def rollout_state_with_mppi(
     return (states, hs)
 
 
+def get_arguments():
+    parser = argparse.ArgumentParser(description="Collect a Dubin's car dataset.")
+    parser.add_argument(
+        "--env",
+        type=str,
+        default="basic",
+        choices=sorted(ENVIRONMENTS.keys()),
+        help="Environment name from environments/dubins.py.",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = get_arguments()
+
     key = jax.random.key(seed=0)
-    parameters = get_environment_parameters("basic")
+    parameters = get_environment_parameters(args.env)
 
     rollout_keys = jax.random.split(key, NUM_ROLLOUTS)
 
@@ -139,15 +155,15 @@ def main():
             shape=(3,),
             minval=jnp.array(
                 [
-                    parameters.x_min - BOUNDARY_SAMPLE_MARGIN,
-                    parameters.y_min - BOUNDARY_SAMPLE_MARGIN,
+                    parameters.x_min,
+                    parameters.y_min,
                     parameters.dubins_params.velocity_min,
                 ]
             ),
             maxval=jnp.array(
                 [
-                    parameters.x_max + BOUNDARY_SAMPLE_MARGIN,
-                    parameters.y_max + BOUNDARY_SAMPLE_MARGIN,
+                    parameters.x_max,
+                    parameters.y_max,
                     parameters.dubins_params.velocity_max,
                 ]
             ),

@@ -22,8 +22,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-from environments.dubins import get_environment_parameters
-from environments.dubins import get_environment_parameters
+from environments.dubins import ENVIRONMENTS, get_environment_parameters
 
 
 BOUNDARY_VIS_MARGIN = 1.0
@@ -182,10 +181,17 @@ def main():
     parser.add_argument(
         "--save", action="store_true", help="Save the plot to heatmap.png"
     )
+    parser.add_argument(
+        "--env",
+        type=str,
+        default="basic",
+        choices=sorted(ENVIRONMENTS.keys()),
+        help="Environment name from environments/dubins.py.",
+    )
     args = parser.parse_args()
 
     # Load space bounds from parameters
-    params = get_environment_parameters("basic")
+    params = get_environment_parameters(args.env)
     x_min = float(params.x_min) - BOUNDARY_VIS_MARGIN
     x_max = float(params.x_max) + BOUNDARY_VIS_MARGIN
     y_min = float(params.y_min) - BOUNDARY_VIS_MARGIN
