@@ -25,13 +25,22 @@ from networks.ncbf import load_checkpoint, NCBF, NCBFNetwork
 import argparse
 from pathlib import Path
 
+
 def get_arguments():
     parser = argparse.ArgumentParser(description="Run Dubin's car.")
-    parser.add_argument('--ncbf', type=Path, default=None, help="Path to NCBF checkpoint. Providing this will use the NCBF safety layer. ")
+    parser.add_argument(
+        "--ncbf",
+        type=Path,
+        default=None,
+        help="Path to NCBF checkpoint. Providing this will use the NCBF safety layer. ",
+    )
 
     return parser.parse_args()
 
-def make_mppi_controller(horizon: int, num_rollouts: int, temp: float, variances: list[float]):
+
+def make_mppi_controller(
+    horizon: int, num_rollouts: int, temp: float, variances: list[float]
+):
     mppi_state = MPPIState(
         actions=jnp.full((horizon, 2), fill_value=0.0),
         key=jax.random.key(seed=0),
@@ -47,19 +56,20 @@ def make_mppi_controller(horizon: int, num_rollouts: int, temp: float, variances
 
     return mppi_state, mppi_params, mppi_dynamic_params
 
+
 def main():
     args = get_arguments()
-    
+
     ncbf_path: Path | None = args.ncbf
-    use_ncbf = ncbf_path is not None 
-    
+    use_ncbf = ncbf_path is not None
+
     # Load parameters from environment
     params: Parameters = get_environment_parameters("basic")
 
-    # Define environment initial states   
+    # Define environment initial states
     dubins_state = DubinsState(
         x=jnp.array(0.5),
-        y=jnp.array(2.75),
+        y=jnp.array(3.75),
         v=jnp.array(0.0),
         theta=jnp.array(0.0),
     )
@@ -72,17 +82,17 @@ def main():
     )
 
     state = State(dubins_state=dubins_state, obstacle_state=obs_states)
-    dt = 0.05 # NOTE: Could include in the state
+    dt = 0.05  # NOTE: Could include in the state
 
     # Define MPPI controller
-    horizon = 20
-    num_rollouts = 256
+    horizon = 10
+    num_rollouts = 64
     temp = 1.0
-    variances = [ 1.0, 1.0 ]
+    variances = [1.0, 1.0]
 
-    
     mppi_state, mppi_params, mppi_dynamic_params = make_mppi_controller(
-        horizon, num_rollouts, temp, variances) # NOTE: use eqx.module to merge mppi_params and mppi_dynamics params
+        horizon, num_rollouts, temp, variances
+    )  # NOTE: use eqx.module to merge mppi_params and mppi_dynamics params
 
     # Load task-specific cost functions
     goal = jnp.array([7.0, 3.5, 0.0])
@@ -91,23 +101,23 @@ def main():
 
     # Create safety filter (this project this is done by augmenting cost fn)
 
-    collision_checker = compute_h_vector # Happen to be the same in this case
-    h_fn = compute_h_vector # Dubin's car specific safety filter
+    collision_checker = compute_h_vector  # Happen to be the same in this case
+    h_fn = compute_h_vector  # Dubin's car specific safety filter
     if use_ncbf:
-        print(f'Loading NCBF network from {ncbf_path}')
+        print(f"Loading NCBF network from {ncbf_path}")
         ncbf_network: NCBFNetwork = load_checkpoint(ncbf_path)[0]
-        h_fn = NCBF(h_fn=h_fn, ncbf_network=ncbf_network) # NCBF is max ( h, V_network )
+        h_fn = NCBF(
+            h_fn=h_fn, ncbf_network=ncbf_network
+        )  # NCBF is max ( h, V_network )
 
     cbf_alpha = 0.92
     vio_cost = 10_000.0
     compute_cbf_violation = cbf.cbf_violation(h_fn, dt)
     cost_fn, terminal_cost_fn = cbf.embed_cbf_violation(
-        compute_cbf_violation, task_cost_fn, task_terminal_cost_fn, cbf_alpha, vio_cost)
-    
+        compute_cbf_violation, task_cost_fn, task_terminal_cost_fn, cbf_alpha, vio_cost
+    )
 
     num_steps = 120
-
-
 
     # --- GRID VISUALIZATION ---
     grid_x = jnp.linspace(params.x_min, params.x_max, 50)
@@ -147,7 +157,9 @@ def main():
         [float(state.dubins_state.theta)],
     )
 
-    obs_pos = jax.vmap(ObstacleState.position)(state.obstacle_state, params.obstacle_params)
+    obs_pos = jax.vmap(ObstacleState.position)(
+        state.obstacle_state, params.obstacle_params
+    )
     obs_xs, obs_ys = [np.asarray(obs_pos[:, 0])], [np.asarray(obs_pos[:, 1])]
 
     rollout_xs, rollout_ys = [], []  # per-step (num_rollouts, horizon)
@@ -185,13 +197,16 @@ def main():
         if (h_vector > 0.0).any():
             violation_steps.add(which_step)
             print(f"h(x) = {h_vector}")
+            print(f"x = {state}")
 
         state = step_state(state, action, params, dt)
         xs.append(float(state.dubins_state.x))
         ys.append(float(state.dubins_state.y))
         thetas.append(float(state.dubins_state.theta))
 
-        obs_pos = jax.vmap(ObstacleState.position)(state.obstacle_state, params.obstacle_params)
+        obs_pos = jax.vmap(ObstacleState.position)(
+            state.obstacle_state, params.obstacle_params
+        )
         obs_xs.append(np.asarray(obs_pos[:, 0]))
         obs_ys.append(np.asarray(obs_pos[:, 1]))
 

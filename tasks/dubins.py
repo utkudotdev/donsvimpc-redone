@@ -22,35 +22,44 @@ def make_goal_reaching_task(goal: jnp.ndarray, goal_eps=0.1):
         pos_err = (d.x - goal[0]) ** 2 + (d.y - goal[1]) ** 2
         return 100 * pos_err
 
-
     def task_done_fn(s: State, p: Parameters) -> jnp.ndarray:
-        dubins_position = jnp.array([ s.dubins_state.x, s.dubins_state.y, s.dubins_state.v ])
+        dubins_position = jnp.array(
+            [s.dubins_state.x, s.dubins_state.y, s.dubins_state.v]
+        )
         done = jnp.linalg.norm(dubins_position - goal) <= goal_eps
 
         terminated = _collided_with_boundary_or_obstacles(s, p)
 
-        return jnp.array([ done, terminated ])
-
+        return jnp.array([done, terminated])
 
     return task_cost_fn, task_terminal_cost_fn, task_done_fn
 
 
 def compute_h_vector(s: State, p: Parameters):
-    h_boundary = jnp.max(jnp.array([ 
-        s.dubins_state.x - p.x_max, 
-        p.x_min - s.dubins_state.x,
-        s.dubins_state.y - p.y_max, 
-        p.y_min - s.dubins_state.y]))
+    h_boundary = jnp.max(
+        jnp.array(
+            [
+                s.dubins_state.x - p.x_max,
+                p.x_min - s.dubins_state.x,
+                s.dubins_state.y - p.y_max,
+                p.y_min - s.dubins_state.y,
+            ]
+        )
+    )
 
     dubins_position = s.dubins_state.position()
-    obstacle_positions = jax.vmap(ObstacleState.position)(s.obstacle_state, p.obstacle_params)
+    obstacle_positions = jax.vmap(ObstacleState.position)(
+        s.obstacle_state, p.obstacle_params
+    )
 
-    signed_distances = jnp.linalg.norm(dubins_position - obstacle_positions, axis=1) - p.obstacle_params.radius
-    signed_distance = jnp.min(signed_distances)
+    signed_distances = (
+        jnp.linalg.norm(dubins_position - obstacle_positions, axis=1)
+        - p.obstacle_params.radius
+    )
+    # signed_distance = jnp.min(signed_distances)
 
-    h_obstacles = -signed_distance
+    # h_obstacles = -signed_distance
+    h_obstacles = -signed_distances
 
-    return jnp.array([
-        h_obstacles, 
-        h_boundary
-    ])
+    return jnp.concatenate([h_obstacles, jnp.atleast_1d(h_boundary)])
+

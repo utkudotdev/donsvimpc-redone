@@ -14,6 +14,19 @@ from safety import cbf
 from environments.dubins import get_environment_parameters
 
 
+NUM_ROLLOUTS = 40000
+NUM_ROLLOUTS_PER_BATCH = 4096
+MAX_ROLLOUT_LENGTH = 64
+DT = 0.05
+
+MPPI_HORIZON = 20
+MPPI_NUM_ROLLOUTS = 128
+MPPI_TEMP = 1.0
+MPPI_VARIANCE = [1.0, 1.0]
+
+BOUNDARY_SAMPLE_MARGIN = 0.5
+
+
 def sample_start_state(key: jnp.ndarray, p: Parameters) -> State:
     N_OBSTACLES = len(p.obstacle_params.start_point)
     obstacles_key, x_key, y_key, v_key, theta_key = jax.random.split(key, 5)
@@ -29,8 +42,16 @@ def sample_start_state(key: jnp.ndarray, p: Parameters) -> State:
 
     return State(
         dubins_state=DubinsState(
-            x=jax.random.uniform(x_key, minval=p.x_min, maxval=p.x_max),
-            y=jax.random.uniform(y_key, minval=p.y_min, maxval=p.y_max),
+            x=jax.random.uniform(
+                x_key,
+                minval=p.x_min - BOUNDARY_SAMPLE_MARGIN,
+                maxval=p.x_max + BOUNDARY_SAMPLE_MARGIN,
+            ),
+            y=jax.random.uniform(
+                y_key,
+                minval=p.y_min - BOUNDARY_SAMPLE_MARGIN,
+                maxval=p.y_max + BOUNDARY_SAMPLE_MARGIN,
+            ),
             v=jax.random.uniform(
                 v_key,
                 minval=p.dubins_params.velocity_min,
@@ -104,17 +125,6 @@ def rollout_state_with_mppi(
     return (states, hs)
 
 
-NUM_ROLLOUTS = 10000
-NUM_ROLLOUTS_PER_BATCH = 1024
-MAX_ROLLOUT_LENGTH = 64
-DT = 0.05
-
-MPPI_HORIZON = 20
-MPPI_NUM_ROLLOUTS = 128
-MPPI_TEMP = 1.0
-MPPI_VARIANCE = [1.0, 1.0]
-
-
 def main():
     key = jax.random.key(seed=0)
     parameters = get_environment_parameters("basic")
@@ -129,15 +139,15 @@ def main():
             shape=(3,),
             minval=jnp.array(
                 [
-                    parameters.x_min,
-                    parameters.y_min,
+                    parameters.x_min - BOUNDARY_SAMPLE_MARGIN,
+                    parameters.y_min - BOUNDARY_SAMPLE_MARGIN,
                     parameters.dubins_params.velocity_min,
                 ]
             ),
             maxval=jnp.array(
                 [
-                    parameters.x_max,
-                    parameters.y_max,
+                    parameters.x_max + BOUNDARY_SAMPLE_MARGIN,
+                    parameters.y_max + BOUNDARY_SAMPLE_MARGIN,
                     parameters.dubins_params.velocity_max,
                 ]
             ),
