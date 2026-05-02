@@ -143,10 +143,12 @@ def main():
             ),
         )
 
+        cbf_alpha = 0.92
+        vio_cost = 1000.0
         cost_fn, terminal_cost_fn, _ = make_goal_reaching_task(goal)
         h_vio_fn = cbf.cbf_violation(compute_h_vector, DT)
         cost_fn, terminal_cost_fn = cbf.embed_cbf_violation(
-            h_vio_fn, cost_fn, terminal_cost_fn
+            h_vio_fn, cost_fn, terminal_cost_fn, cbf_alpha, vio_cost
         )
 
         states, hs = rollout_state_with_mppi(
