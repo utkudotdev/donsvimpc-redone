@@ -1,4 +1,4 @@
-from dynamics.environment_dynamics import State, Parameters
+from dynamics.environment_dynamics import State, Parameters, make_relative_dubins_state
 from dynamics.obstacle_dynamics import ObstacleState
 from dynamics.dubins_dynamics import DubinsState
 import jax
@@ -11,44 +11,9 @@ from environments.dubins import get_environment_parameters
 from functools import partial
 import tqdm
 
-from networks.ncbf import NCBF, compute_ncbf_loss, load_checkpoint, save_checkpoint
+from networks.ncbf import NCBFNetwork, compute_ncbf_loss, load_checkpoint, save_checkpoint
 import optax
 import equinox as eqx
-
-
-def make_relative_state(s: State, p: Parameters) -> jnp.ndarray:
-    """
-    Input to neural-CBF contains the state. To make the neural-CBF more
-    general, we pass in a 'relative state'.
-
-    """
-    obstacle_relative_pos = (
-        jax.vmap(ObstacleState.position)(s.obstacle_state, p.obstacle_params)
-        - s.dubins_state.position()
-    )
-    boundary_max_relative_pos = (
-        jnp.array([p.x_max, p.y_max]) - s.dubins_state.position()
-    )
-    boundary_min_relative_pos = s.dubins_state.position() - jnp.array(
-        [p.x_min, p.y_min]
-    )
-
-    obstacle_abs_vel = jax.vmap(ObstacleState.velocity)(
-        s.obstacle_state, p.obstacle_params
-    )
-
-    # TODO: if we randomize car dynamics we would have to include that here
-    # Right now, dynamics and velocity constraints are baked into NCBF
-    return jnp.concatenate(
-        [
-            obstacle_relative_pos.flatten(),
-            boundary_max_relative_pos,
-            boundary_min_relative_pos,
-            jnp.atleast_1d(s.dubins_state.v),
-            jnp.atleast_1d(s.dubins_state.theta),
-            obstacle_abs_vel.flatten(),
-        ]
-    )
 
 
 def make_training_triples(relative_states: jnp.ndarray, hs: jnp.ndarray):
@@ -140,7 +105,7 @@ def evaluate(model, discount_factor, batch_size, x_t, h_t, x_t1):
 
 @eqx.filter_jit
 def eval_ncbf_grid(
-    ncbf: NCBF, params: Parameters, flat_x: jnp.ndarray, flat_y: jnp.ndarray
+    ncbf: NCBFNetwork, params: Parameters, flat_x: jnp.ndarray, flat_y: jnp.ndarray
 ):
     num_obstacles = params.obstacle_params.start_point.shape[0]
     obstacle_alpha = jnp.zeros((num_obstacles,))
@@ -153,14 +118,14 @@ def eval_ncbf_grid(
                 alpha=obstacle_alpha, forward=obstacle_forward
             ),
         )
-        rel = make_relative_state(state, params)
+        rel = make_relative_dubins_state(state, params)
         return jnp.max(ncbf(rel))
 
     return jax.vmap(_eval_single)(flat_x, flat_y)
 
 
 def visualize_ncbf(
-    ncbf: NCBF,
+    ncbf: NCBFNetwork,
     params: Parameters,
     resolution: int = 100,
     save_path: str | None = None,
@@ -254,6 +219,34 @@ def parse_args():
         default=None,
         help="Path to a checkpoint to resume training from. If omitted, starts fresh.",
     )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=10,
+        help="Number of epochs to train (or continue training) for."
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1024,
+    )
+    parser.add_argument(
+        "--discount-factor",
+        type=float,
+        default=0.92,
+        help="Discount factor for value function."
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=3e-4
+    )
+    parser.add_argument(
+        "--hidden-size",
+        type=int,
+        default=256,
+        help="Hidden size for NCBF architecture."
+    )
     return parser.parse_args()
 
 
@@ -273,7 +266,7 @@ def main():
     def prepare_dset(train_percent: float, key: jnp.ndarray):
         # input shape: (num_trajs, traj length, state obj ). output shape: (num trajs, traj length, relative state size)
         relative_states = jax.vmap(
-            jax.vmap(make_relative_state, in_axes=(0, None)), in_axes=(0, None)
+            jax.vmap(make_relative_dubins_state, in_axes=(0, None)), in_axes=(0, None)
         )(states, params)
         assert relative_states.ndim == 3
         assert relative_states.shape[:2] == (num_trajs, traj_length)
@@ -307,37 +300,36 @@ def main():
         prepare_dset(train_percent, split_data_key)
     )
 
-    epochs = 10
-    batch_size = 1024
-    discount_factor = 0.92
+    epochs = args.epochs
+    batch_size = args.batch_size
+    discount_factor = args.discount_factor
 
     run_dir = Path("runs") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     checkpoint_dir = run_dir / "checkpoints"
     plots_dir = run_dir / "plots"
-    checkpoint_path = checkpoint_dir / "ncbf.eqx"
     print(f"Run directory: {run_dir}")
 
     rel_state_size = train_x_ts.shape[1]
 
     key, init_model_key = jax.random.split(key)
 
-    model = NCBF(
-        key=init_model_key,
-        relative_state_dim=rel_state_size,
-        h_vector_dim=h_vec_shape,
-        hidden_size=256,
-    )
-
-    optimizer = optax.adamw(learning_rate=3e-4)
-    opt_state = optimizer.init(eqx.filter(model, eqx.is_array))
-
-    start_epoch = 0
     if args.checkpoint is not None:
         print(f"Loading checkpoint from {args.checkpoint}")
-        model, opt_state, start_epoch = load_checkpoint(
-            args.checkpoint, model, opt_state
-        )
+        model, optimizer, opt_state, start_epoch = load_checkpoint(args.checkpoint)
         print(f"Resuming from epoch {start_epoch}")
+    else:
+        model = NCBFNetwork(
+            key=init_model_key,
+            relative_state_dim=rel_state_size,
+            h_vector_dim=h_vec_shape,
+            hidden_size=args.hidden_size,
+        )
+
+        start_epoch = 0
+
+        optimizer_params = { "learning_rate" : args.learning_rate }
+        optimizer = optax.adamw(**optimizer_params)
+        opt_state = optimizer.init(eqx.filter(model, eqx.is_array))       
 
     visualize_ncbf(
         model,
@@ -375,7 +367,15 @@ def main():
             show=False,
         )
 
-        save_checkpoint(checkpoint_path, model, opt_state, epoch + 1)
+        save_checkpoint(
+            checkpoint_dir, 
+            model,
+            epoch + 1, 
+            opt_state, 
+            optax.adamw.__name__, 
+            optimizer_params, 
+            vars(args)
+        )
 
         tqdm.tqdm.write(
             f"Epoch {epoch + 1} | Train Loss: {float(train_loss):.4f} | Test Loss: {float(test_loss):.4f}"

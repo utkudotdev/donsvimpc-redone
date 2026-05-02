@@ -13,12 +13,12 @@ def cbf_violation(h_fn, dt):
     return compute_cbf_violation
 
 
-def embed_cbf_violation(h_vio_fn, cost_fn, terminal_cost_fn):
+def embed_cbf_violation(h_vio_fn, cost_fn, terminal_cost_fn, alpha: float, vio_cost: float):
     def cost_fn_cbf(s: State, a: jnp.ndarray, p: Parameters):
-        h_violation = h_vio_fn(s, a, p, alpha=0.95)
-        cbf_cost = jnp.where(h_violation > 0, 100 * h_violation, 0.0)
+        h_violation = h_vio_fn(s, a, p, alpha=alpha)
+        cbf_cost = jnp.where(h_violation > 0, vio_cost * h_violation, 0.0)
         task_cost = cost_fn(s, a, p)
-        return task_cost + 10 * cbf_cost    
+        return task_cost + cbf_cost    
         
     def terminal_cost_fn_cbf(s: State, p: Parameters):
         return terminal_cost_fn(s, p)
