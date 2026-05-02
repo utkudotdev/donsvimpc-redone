@@ -83,6 +83,30 @@ ENVIRONMENTS: dict[str, Parameters] = {
         y_min=jnp.array(0.0),
         y_max=jnp.array(2.0),
     ),
+    "single_obstacle_narrow_moving_vertical": Parameters(
+        dubins_params=DubinsParameters(
+            turn_rate_min=jnp.array(-1.0),
+            turn_rate_max=jnp.array(1.0),
+            velocity_min=jnp.array(-1.0),
+            velocity_max=jnp.array(1.0),
+            acceleration_min=jnp.array(-2.0),
+            acceleration_max=jnp.array(2.0),
+        ),
+        obstacle_params=from_many(
+            ObstacleParameters(
+                radius=jnp.array(0.75),
+                speed=jnp.array(0.7),
+                start_point=jnp.array([1.0, 7.0]),
+                end_point=jnp.array([1.0, 1.0]),
+            ),
+        ),
+        # TODO: currently, the network is not resillient to changes in boundary
+        # so this is the same as above for testing purposes but eventually we'd like to generalize
+        x_min=jnp.array(0.0),
+        x_max=jnp.array(8.0),
+        y_min=jnp.array(0.0),
+        y_max=jnp.array(2.0),
+    ),
 }
 
 

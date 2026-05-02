@@ -7,6 +7,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 from environments.dubins import ENVIRONMENTS, get_environment_parameters
+from environments.discovery import discover_env_name
 
 from functools import partial
 import tqdm
@@ -246,9 +247,9 @@ def parse_args():
     parser.add_argument(
         "--env",
         type=str,
-        default="basic",
+        default=None,
         choices=sorted(ENVIRONMENTS.keys()),
-        help="Environment name from environments/dubins.py.",
+        help="Environment name. Defaults to the env from the dataset's sibling metadata.json, or 'basic' if missing.",
     )
     parser.add_argument(
         "--hidden-size",
@@ -262,11 +263,13 @@ def parse_args():
 def main():
     args = parse_args()
 
-    data = jnp.load(args.dataset, allow_pickle=True)
+    data = jnp.load(args.dataset / "dset.npz", allow_pickle=True)
     states: State = data["states"].item()
     hs: jnp.ndarray = data["hs"]
 
-    params = get_environment_parameters(args.env)
+    env_name = args.env if args.env is not None else discover_env_name(args.dataset)
+    args.env = env_name
+    params = get_environment_parameters(env_name)
 
     num_trajs, traj_length = states.dubins_state.x.shape
     h_vec_shape = hs.shape[2]

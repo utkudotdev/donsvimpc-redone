@@ -10,3 +10,4 @@ wheels/
 .venv
 *.npz
 runs/
+data/

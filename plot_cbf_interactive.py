@@ -38,6 +38,7 @@ from dynamics.environment_dynamics import State
 from dynamics.dubins_dynamics import DubinsState
 from dynamics.obstacle_dynamics import ObstacleState
 from environments.dubins import get_environment_parameters
+from environments.discovery import discover_env_name
 from networks.ncbf import NCBF, NCBFNetwork, load_checkpoint
 from tasks.dubins import compute_h_vector
 
@@ -47,7 +48,10 @@ def get_arguments():
         description="Interactively visualize the CBF over (x, y) for a chosen environment."
     )
     parser.add_argument(
-        "--env", type=str, default="basic", help="Environment name (default: basic)"
+        "--env",
+        type=str,
+        default=None,
+        help="Environment name. Defaults to the env from the NCBF checkpoint metadata, or 'basic' if no checkpoint is given.",
     )
     parser.add_argument(
         "--ncbf",
@@ -63,7 +67,9 @@ def get_arguments():
 
 def main():
     args = get_arguments()
-    params = get_environment_parameters(args.env)
+
+    env_name = args.env if args.env is not None else discover_env_name(args.ncbf)
+    params = get_environment_parameters(env_name)
 
     h_fn = compute_h_vector
 

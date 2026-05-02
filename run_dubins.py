@@ -21,6 +21,7 @@ from dynamics.dubins_dynamics import DubinsState
 from safety import cbf
 from tasks.dubins import compute_h_vector, make_goal_reaching_task
 from environments.dubins import ENVIRONMENTS, get_environment_parameters
+from environments.discovery import discover_env_name
 
 from networks.ncbf import load_checkpoint, NCBF, NCBFNetwork
 
@@ -39,9 +40,9 @@ def get_arguments():
     parser.add_argument(
         "--env",
         type=str,
-        default="basic",
+        default=None,
         choices=sorted(ENVIRONMENTS.keys()),
-        help="Environment name from environments/dubins.py.",
+        help="Environment name. Defaults to the env from the NCBF checkpoint metadata, or 'basic' if no checkpoint is given.",
     )
 
     return parser.parse_args()
@@ -256,7 +257,8 @@ def main():
     ncbf_path: Path | None = args.ncbf
     use_ncbf = ncbf_path is not None
 
-    params: Parameters = get_environment_parameters(args.env)
+    env_name = args.env if args.env is not None else discover_env_name(ncbf_path)
+    params: Parameters = get_environment_parameters(env_name)
 
     dubins_state = DubinsState(
         x=jnp.array(1.0),

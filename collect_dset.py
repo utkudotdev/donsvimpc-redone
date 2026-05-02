@@ -1,4 +1,7 @@
 import argparse
+import json
+from datetime import datetime
+from pathlib import Path
 
 from dynamics.obstacle_dynamics import ObstacleState, from_many
 from dynamics.environment_dynamics import State, Parameters, step_state
@@ -25,6 +28,9 @@ MPPI_HORIZON = 8
 MPPI_NUM_ROLLOUTS = 256
 MPPI_TEMP = 1.0
 MPPI_VARIANCE = [1.0, 1.0]
+
+CBF_ALPHA = 0.92
+VIO_COST = 1000.0
 
 BOUNDARY_SAMPLE_MARGIN = 0.5
 
@@ -169,12 +175,10 @@ def main():
             ),
         )
 
-        cbf_alpha = 0.92
-        vio_cost = 1000.0
         cost_fn, terminal_cost_fn, _ = make_goal_reaching_task(goal)
         h_vio_fn = cbf.cbf_violation(compute_h_vector, DT)
         cost_fn, terminal_cost_fn = cbf.embed_cbf_violation(
-            h_vio_fn, cost_fn, terminal_cost_fn, cbf_alpha, vio_cost
+            h_vio_fn, cost_fn, terminal_cost_fn, CBF_ALPHA, VIO_COST
         )
 
         states, hs = rollout_state_with_mppi(
@@ -194,7 +198,29 @@ def main():
         return (states, hs)
 
     states, hs = jax.lax.map(_inner, rollout_keys, batch_size=NUM_ROLLOUTS_PER_BATCH)
-    jnp.savez("dset.npz", states=states, hs=hs)
+
+    out_dir = Path("data") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Saving dataset to {out_dir}")
+
+    jnp.savez(out_dir / "dset.npz", states=states, hs=hs)
+
+    metadata = {
+        "env": args.env,
+        "num_rollouts": NUM_ROLLOUTS,
+        "num_rollouts_per_batch": NUM_ROLLOUTS_PER_BATCH,
+        "max_rollout_length": MAX_ROLLOUT_LENGTH,
+        "dt": DT,
+        "mppi_horizon": MPPI_HORIZON,
+        "mppi_num_rollouts": MPPI_NUM_ROLLOUTS,
+        "mppi_temp": MPPI_TEMP,
+        "mppi_variance": MPPI_VARIANCE,
+        "cbf_alpha": CBF_ALPHA,
+        "vio_cost": VIO_COST,
+        "boundary_sample_margin": BOUNDARY_SAMPLE_MARGIN,
+    }
+    with open(out_dir / "metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2)
 
 
 if __name__ == "__main__":

@@ -17,12 +17,15 @@ Expected .npz keys (flat arrays from a State pytree):
 """
 
 import argparse
+from pathlib import Path
+
 import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 from environments.dubins import ENVIRONMENTS, get_environment_parameters
+from environments.discovery import discover_env_name
 
 
 BOUNDARY_VIS_MARGIN = 1.0
@@ -171,7 +174,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Plot state-visitation heatmap from rollout .npz"
     )
-    parser.add_argument("npz_path", type=str, help="Path to the .npz file")
+    parser.add_argument("dataset", type=Path, help="Path to the dataset folder")
     parser.add_argument(
         "--resolution",
         type=int,
@@ -184,22 +187,24 @@ def main():
     parser.add_argument(
         "--env",
         type=str,
-        default="basic",
+        default=None,
         choices=sorted(ENVIRONMENTS.keys()),
-        help="Environment name from environments/dubins.py.",
+        help="Environment name. Defaults to the env from the dataset's sibling metadata.json, or 'basic' if missing.",
     )
     args = parser.parse_args()
 
-    # Load space bounds from parameters
-    params = get_environment_parameters(args.env)
+    npz_path = args.dataset / "dset.npz"
+
+    env_name = args.env if args.env is not None else discover_env_name(args.dataset)
+    params = get_environment_parameters(env_name)
     x_min = float(params.x_min) - BOUNDARY_VIS_MARGIN
     x_max = float(params.x_max) + BOUNDARY_VIS_MARGIN
     y_min = float(params.y_min) - BOUNDARY_VIS_MARGIN
     y_max = float(params.y_max) + BOUNDARY_VIS_MARGIN
 
-    xs, ys, vs, thetas, hs = load_data(args.npz_path)
+    xs, ys, vs, thetas, hs = load_data(npz_path)
 
-    print(f"Loaded {len(xs):,} data points from {args.npz_path}")
+    print(f"Loaded {len(xs):,} data points from {npz_path}")
     print(f"Space bounds: x ∈ [{x_min}, {x_max}], y ∈ [{y_min}, {y_max}]")
     print(f"Grid resolution: {args.resolution} × {args.resolution}")
     print(f"Velocity range: [{float(vs.min()):.3f}, {float(vs.max()):.3f}]")
