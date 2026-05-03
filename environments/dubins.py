@@ -16,10 +16,15 @@ def make_randomized_environment(key: jnp.ndarray) -> Parameters:
         acceleration_max=jnp.array(2.0),
     )
 
-    min_key, size_key, key = jax.random.split(key, 3)
-    x_min, y_min = jax.random.uniform(min_key, shape=(2,), minval=-2.0, maxval=2.0)
-    x_size, y_size = jax.random.uniform(size_key, shape=(2,), minval=0.5, maxval=4.0)
-    x_max, y_max = x_min + x_size, y_min + y_size
+    size_key, obstacle_key = jax.random.split(key, 2)
+    x_max, y_max = jax.random.uniform(size_key, shape=(2,), minval=0.5, maxval=10.0)
+
+    start_point, end_point = jax.random.uniform(
+        obstacle_key,
+        shape=(2, 2),
+        minval=jnp.zeros(2),
+        maxval=jnp.array([x_max, y_max]),
+    )
 
     return Parameters(
         dubins_params=dubins_params,
@@ -27,13 +32,13 @@ def make_randomized_environment(key: jnp.ndarray) -> Parameters:
             ObstacleParameters(
                 radius=jnp.array(0.75),
                 speed=jnp.array(0.7),
-                start_point=jnp.array([x_min, y_min]),
-                end_point=jnp.array([x_max, y_max]),
+                start_point=start_point,
+                end_point=end_point,
             ),
         ),
-        x_min=x_min,
+        x_min=0.0,
         x_max=x_max,
-        y_min=y_min,
+        y_min=0.0,
         y_max=y_max,
     )
 

@@ -60,4 +60,6 @@ def compute_h_vector(s: State, p: Parameters):
 
     h_obstacles = -signed_distance
 
-    return jnp.array([h_obstacles, h_boundary])
+    single_component = jnp.maximum(h_obstacles, h_boundary)
+
+    return jnp.array([single_component])
