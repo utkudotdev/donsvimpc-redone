@@ -269,9 +269,9 @@ def main():
 
     dubins_state = DubinsState(
         x=jnp.array(1.0),
-        y=jnp.array(1.0),
+        y=jnp.array(3.0),
         v=jnp.array(0.0),
-        theta=jnp.array(jnp.pi / 2),
+        theta=jnp.array(0.0),
     )
 
     num_obstacles = params.obstacle_params.radius.shape[0]
@@ -292,9 +292,9 @@ def main():
         horizon, num_rollouts, temp, variances, mppi_key
     )
 
-    # goal = jnp.array([7.0, 3.5, 0.0])
+    goal = jnp.array([7.0, 3.5, 0.0])
     # goal = jnp.array([7.0, 1.0, 0.0])
-    goal = jnp.array([1.0, 7.0, 0.0])
+    # goal = jnp.array([1.0, 7.0, 0.0])
     task_cost_fn, task_terminal_cost_fn, _task_done_fn = make_goal_reaching_task(goal)
 
     collision_checker = compute_h_vector

@@ -19,7 +19,7 @@ from safety import cbf
 from environments.dubins import ENVIRONMENTS, make_environment
 
 
-NUM_ROLLOUTS = 60000
+NUM_ROLLOUTS = 100000
 NUM_ROLLOUTS_PER_BATCH = 4096
 MAX_ROLLOUT_LENGTH = 64
 DT = 0.05

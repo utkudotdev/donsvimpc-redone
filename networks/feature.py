@@ -33,7 +33,6 @@ def make_dubins_features(s: State, p: Parameters) -> jnp.ndarray:
 
     return jnp.concatenate(
         [
-            s.dubins_state.position(),
             jnp.atleast_1d(s.dubins_state.v),
             theta_obs.flatten(),
             obstacle_pos_car.flatten(),

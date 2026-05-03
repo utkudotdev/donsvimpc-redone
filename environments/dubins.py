@@ -6,7 +6,7 @@ from dynamics.obstacle_dynamics import ObstacleParameters, from_many
 from typing import Callable
 
 
-def make_randomized_environment(key: jnp.ndarray) -> Parameters:
+def make_randomized_environment(key: jnp.ndarray, num_obstacles: int) -> Parameters:
     dubins_params = DubinsParameters(
         turn_rate_min=jnp.array(-1.0),
         turn_rate_max=jnp.array(1.0),
@@ -16,25 +16,31 @@ def make_randomized_environment(key: jnp.ndarray) -> Parameters:
         acceleration_max=jnp.array(2.0),
     )
 
-    size_key, obstacle_key = jax.random.split(key, 2)
+    size_key, obstacle_key, radius_key, speed_key = jax.random.split(key, 4)
+
     x_max, y_max = jax.random.uniform(size_key, shape=(2,), minval=0.5, maxval=10.0)
 
     start_point, end_point = jax.random.uniform(
         obstacle_key,
-        shape=(2, 2),
+        shape=(2, num_obstacles, 2),
         minval=jnp.zeros(2),
         maxval=jnp.array([x_max, y_max]),
     )
 
+    radius = jax.random.uniform(
+        radius_key, shape=(num_obstacles,), minval=0.1, maxval=3.0
+    )
+    speed = jax.random.uniform(
+        speed_key, shape=(num_obstacles,), minval=0.0, maxval=1.0
+    )
+
     return Parameters(
         dubins_params=dubins_params,
-        obstacle_params=from_many(
-            ObstacleParameters(
-                radius=jnp.array(0.75),
-                speed=jnp.array(0.7),
-                start_point=start_point,
-                end_point=end_point,
-            ),
+        obstacle_params=ObstacleParameters(
+            radius=radius,
+            speed=speed,
+            start_point=start_point,
+            end_point=end_point,
         ),
         x_min=0.0,
         x_max=x_max,
@@ -77,6 +83,40 @@ ENVIRONMENTS: dict[str, Callable[[jnp.ndarray], Parameters]] = {
         x_max=jnp.array(8.0),
         y_min=jnp.array(2.25),
         y_max=jnp.array(4.0),
+    ),
+    "basic_norm": lambda _: Parameters(
+        dubins_params=DubinsParameters(
+            turn_rate_min=jnp.array(-1.0),
+            turn_rate_max=jnp.array(1.0),
+            velocity_min=jnp.array(-1.0),
+            velocity_max=jnp.array(1.0),
+            acceleration_min=jnp.array(-2.0),
+            acceleration_max=jnp.array(2.0),
+        ),
+        obstacle_params=from_many(
+            ObstacleParameters(
+                radius=jnp.array(1.5),
+                speed=jnp.array(0.0),
+                start_point=jnp.array([4.0, 4.0 - 2.25]),
+                end_point=jnp.array([0.0, 0.0]),
+            ),
+            ObstacleParameters(
+                radius=jnp.array(0.5),
+                speed=jnp.array(0.6),
+                start_point=jnp.array([5.7, 4.0 - 2.25]),
+                end_point=jnp.array([5.7, 2.25 - 2.25]),
+            ),
+            ObstacleParameters(
+                radius=jnp.array(0.5),
+                speed=jnp.array(0.0),
+                start_point=jnp.array([5.7, 4.0 - 2.25]),
+                end_point=jnp.array([5.7, 0.0 - 2.25]),
+            ),
+        ),
+        x_min=jnp.array(0.0),
+        x_max=jnp.array(8.0),
+        y_min=jnp.array(0.0),
+        y_max=jnp.array(1.75),
     ),
     "single_obstacle_narrow": lambda _: Parameters(
         dubins_params=DubinsParameters(
@@ -144,7 +184,8 @@ ENVIRONMENTS: dict[str, Callable[[jnp.ndarray], Parameters]] = {
         y_min=jnp.array(0.0),
         y_max=jnp.array(8.0),
     ),
-    "random": make_randomized_environment,
+    "random": lambda key: make_randomized_environment(key, num_obstacles=1),
+    "random_3_obstacles": lambda key: make_randomized_environment(key, num_obstacles=3),
 }
 
 
