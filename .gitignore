@@ -11,3 +11,5 @@ wheels/
 *.npz
 runs/
 data/
+*.gif
+*.mp4

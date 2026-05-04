@@ -48,6 +48,14 @@ def get_arguments():
         help="Environment name. Defaults to the env from the NCBF checkpoint metadata, or 'basic' if no checkpoint is given.",
     )
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
+    parser.add_argument(
+        "--save",
+        type=Path,
+        nargs="?",
+        const=Path("dubins.mp4"),
+        default=None,
+        help="Save the animation to this path instead of displaying it. Defaults to dubins.mp4 if no path is given.",
+    )
 
     return parser.parse_args()
 
@@ -160,6 +168,7 @@ def visualize(
     num_rollouts: int,
     dt: float,
     num_steps: int,
+    save_path: Path | None = None,
 ):
     xs = np.asarray(states.dubins_state.x)
     ys = np.asarray(states.dubins_state.y)
@@ -249,10 +258,17 @@ def visualize(
             opt_rollout_line,
         ]
 
-    _anim = FuncAnimation(
+    anim = FuncAnimation(
         fig, update, frames=xs.shape[0], interval=dt * 1000, blit=False, repeat=False
     )
-    plt.show()
+
+    if save_path is not None:
+        fps = max(1, int(round(1.0 / dt)))
+        print(f"Saving animation to {save_path}")
+        anim.save(str(save_path), fps=fps)
+        plt.close(fig)
+    else:
+        plt.show()
 
 
 def main():
@@ -336,6 +352,7 @@ def main():
         mppi_params.num_rollouts,
         dt,
         num_steps,
+        save_path=args.save,
     )
 
 
