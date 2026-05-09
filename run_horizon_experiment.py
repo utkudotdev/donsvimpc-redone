@@ -11,7 +11,6 @@ import argparse
 
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import numpy as np
 
 from dynamics.environment_dynamics import Parameters, State, step_state
@@ -39,6 +38,8 @@ VARIANCES = [2.0, 2.0]
 CBF_ALPHA = 0.92
 VIO_COST = 10_000.0
 SAMPLE_MARGIN = 0.0  # keep starts/goals away from walls
+GOAL_RADIUS = 0.3  # robot is "near goal" if within this xy distance
+GOAL_DWELL_STEPS = 10  # consecutive near-goal steps required to count as reached
 
 
 def get_arguments():
@@ -62,8 +63,8 @@ def get_arguments():
     parser.add_argument(
         "--out",
         type=Path,
-        default=Path("horizon_experiment.png"),
-        help="Where to save the resulting plot.",
+        default=Path("horizon_experiment.npz"),
+        help="Where to save the raw experiment results.",
     )
     return parser.parse_args()
 
@@ -171,7 +172,7 @@ def make_simulator(use_ncbf: bool, ncbf_network: NCBFNetwork | None):
         )
 
         def step(carry, _):
-            state, mppi_state = carry
+            state, mppi_state, ever_collided, near_streak, max_streak = carry
             opt_actions, mppi_state, _ = mppi_compute_action(
                 state,
                 params,
@@ -185,26 +186,46 @@ def make_simulator(use_ncbf: bool, ncbf_network: NCBFNetwork | None):
             action = opt_actions[0]
             h_now = jnp.max(compute_h_vector(state, params))
             violated = h_now > 0.0
-            next_state = step_state(state, action, params, DT)
-            return (next_state, mppi_state), violated
+            ever_collided = jnp.logical_or(ever_collided, violated)
 
-        (final_state, _), violations = jax.lax.scan(
-            step, (initial_state, mppi_state), None, length=num_steps
+            d = state.dubins_state
+            near_goal = (
+                (d.x - goal[0]) ** 2 + (d.y - goal[1]) ** 2 < GOAL_RADIUS**2
+            )
+            counts_for_goal = jnp.logical_and(near_goal, jnp.logical_not(ever_collided))
+            near_streak = jnp.where(counts_for_goal, near_streak + 1, 0)
+            max_streak = jnp.maximum(max_streak, near_streak)
+
+            next_state = step_state(state, action, params, DT)
+            return (
+                next_state, mppi_state, ever_collided, near_streak, max_streak,
+            ), None
+
+        init_carry = (
+            initial_state, mppi_state,
+            jnp.array(False), jnp.array(0), jnp.array(0),
+        )
+        (final_state, _, ever_collided, _, max_streak), _ = jax.lax.scan(
+            step, init_carry, None, length=num_steps
         )
         final_h = jnp.max(compute_h_vector(final_state, params))
-        return jnp.logical_or(violations.any(), final_h > 0.0)
+        collided = jnp.logical_or(ever_collided, final_h > 0.0)
+        reached = max_streak >= GOAL_DWELL_STEPS
+        return collided, reached
 
     return simulate
 
 
 def run_for_horizon(simulate, initial_states, goals, params, mppi_keys, horizon):
     num_tasks = goals.shape[0]
-    results = np.zeros(num_tasks, dtype=bool)
+    collided = np.zeros(num_tasks, dtype=bool)
+    reached = np.zeros(num_tasks, dtype=bool)
     for i in range(num_tasks):
         init_i = jax.tree.map(lambda leaf: leaf[i], initial_states)
-        violated = simulate(init_i, goals[i], params, mppi_keys[i], horizon, NUM_STEPS)
-        results[i] = bool(violated)
-    return results
+        c, r = simulate(init_i, goals[i], params, mppi_keys[i], horizon, NUM_STEPS)
+        collided[i] = bool(c)
+        reached[i] = bool(r)
+    return collided, reached
 
 
 def main():
@@ -227,45 +248,46 @@ def main():
     sim_cbf = make_simulator(use_ncbf=False, ncbf_network=None)
     sim_ncbf = make_simulator(use_ncbf=True, ncbf_network=ncbf_network)
 
-    cbf_rates = []
-    ncbf_rates = []
-    for H in HORIZONS:
+    horizons = np.array(HORIZONS, dtype=np.int32)
+    cbf_collided = np.zeros((len(HORIZONS), NUM_TASKS), dtype=bool)
+    cbf_reached = np.zeros_like(cbf_collided)
+    ncbf_collided = np.zeros_like(cbf_collided)
+    ncbf_reached = np.zeros_like(cbf_collided)
+
+    for h_idx, H in enumerate(HORIZONS):
         print(f"\nHorizon H={H}")
         print("  Running CBF...")
-        cbf_violated = run_for_horizon(
+        cbf_collided[h_idx], cbf_reached[h_idx] = run_for_horizon(
             sim_cbf, initial_states, goals, params, mppi_keys, H
         )
         print("  Running NCBF...")
-        ncbf_violated = run_for_horizon(
+        ncbf_collided[h_idx], ncbf_reached[h_idx] = run_for_horizon(
             sim_ncbf, initial_states, goals, params, mppi_keys, H
         )
-        cbf_rate = 100.0 * cbf_violated.mean()
-        ncbf_rate = 100.0 * ncbf_violated.mean()
-        cbf_rates.append(cbf_rate)
-        ncbf_rates.append(ncbf_rate)
-        print(f"  CBF collisions:  {cbf_violated.sum()}/{NUM_TASKS} ({cbf_rate:.1f}%)")
+
         print(
-            f"  NCBF collisions: {ncbf_violated.sum()}/{NUM_TASKS} ({ncbf_rate:.1f}%)"
+            f"  CBF :  collisions {cbf_collided[h_idx].sum()}/{NUM_TASKS}   "
+            f"reached {cbf_reached[h_idx].sum()}/{NUM_TASKS}"
+        )
+        print(
+            f"  NCBF:  collisions {ncbf_collided[h_idx].sum()}/{NUM_TASKS}   "
+            f"reached {ncbf_reached[h_idx].sum()}/{NUM_TASKS}"
         )
 
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot(HORIZONS, cbf_rates, "o-", label="specification-based CBF")
-    ax.plot(HORIZONS, ncbf_rates, "s-", label="NCBF")
-    ax.set_xscale("log", base=2)
-    ax.set_xticks(HORIZONS)
-    ax.set_xticklabels([str(h) for h in HORIZONS])
-    ax.set_xlabel("MPPI horizon")
-    ax.set_ylabel("trajectories with safety violation (%)")
-    ax.set_ylim(0, 100)
-    ax.set_title(
-        f"Safety vs. horizon on '{args.env}' ({NUM_TASKS} tasks, {NUM_STEPS} steps)"
+    print(f"\nSaving results to {args.out}")
+    np.savez(
+        args.out,
+        horizons=horizons,
+        cbf_collided=cbf_collided,
+        cbf_reached=cbf_reached,
+        ncbf_collided=ncbf_collided,
+        ncbf_reached=ncbf_reached,
+        env=args.env,
+        num_tasks=NUM_TASKS,
+        num_steps=NUM_STEPS,
+        goal_radius=GOAL_RADIUS,
+        goal_dwell_steps=GOAL_DWELL_STEPS,
     )
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    fig.tight_layout()
-
-    print(f"\nSaving plot to {args.out}")
-    fig.savefig(args.out, dpi=150)
 
 
 if __name__ == "__main__":
